@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables / secrets
+.env
+backend/.env
+
+# Google service-account credentials — never commit these
+*service-account*.json
+*-sa-key.json
+credentials.json
+
+# Truncated credential filenames left behind by a shell redirect
+service-acc
+
+# Local database: campaign state and generated image blobs
+studio.db
+studio.db-wal
+studio.db-shm
+*.db-journal
