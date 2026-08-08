@@ -51,6 +51,7 @@ export default function ImageCampaign() {
           audiences={ctx.audiences}
           initialStyle={ctx.secondary}
           productImage={ctx.productImage}
+          productImages={ctx.productImages}
           initialImage={ctx.image}
           onConfigChange={(cfg) => ctx.onBannerConfig?.(format, lang, cfg)}
           // Canvas text edits write back to the campaign copy, so the banner,

@@ -147,9 +147,24 @@ export async function renderBanner({ bannerSize, backgroundCss, backgroundImage,
     }
   }
 
-  // 3. Text layers.
+  // 3. Text layers and Product overlays.
   ctx.textBaseline = "top";
   for (const layer of Object.values(layers)) {
+    if (layer.src) {
+      try {
+        const img = await loadImage(layer.src);
+        // cqmax matching: scaled against longest edge
+        const drawW = (layer.sizePct / 100) * Math.max(w, h);
+        const drawH = (img.height / img.width) * drawW;
+        const x = (layer.xPct / 100) * w;
+        const y = (layer.yPct / 100) * h;
+        ctx.drawImage(img, x, y, drawW, drawH);
+      } catch {
+        /* skip missing product overlay */
+      }
+      continue;
+    }
+
     if (!layer.text?.trim()) continue;
     // Matches the cqmin basis used by the on-screen editor.
     const fontSize = (layer.sizePct / 100) * Math.min(w, h);

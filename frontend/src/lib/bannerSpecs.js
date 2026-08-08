@@ -106,11 +106,24 @@ export function previewStyle(bannerSize, maxHeightPx) {
   };
 }
 
-// Default layer placement, expressed as percentages of the canvas so it
-// survives any scale change between preview and export.
-export function defaultLayers(headline, body) {
+export function defaultLayers(headline, body, productImage = null, productImages = []) {
+  const images = productImages?.length ? productImages : (productImage ? [productImage] : []);
+  const addedProducts = {};
+
+  if (images.length === 1) {
+    addedProducts.product = { src: images[0], xPct: 53, yPct: 15, sizePct: 45 };
+  } else if (images.length === 2) {
+    addedProducts.product0 = { src: images[0], xPct: 45, yPct: 15, sizePct: 40 };
+    addedProducts.product1 = { src: images[1], xPct: 73, yPct: 20, sizePct: 30 };
+  } else if (images.length > 0) {
+    images.forEach((img, i) => {
+      addedProducts[`product${i}`] = { src: img, xPct: 40 + (i * 15), yPct: 20, sizePct: 35 };
+    });
+  }
+
   return {
     headline: { text: headline, xPct: 6, yPct: 62, sizePct: 7.5, color: "#FFFFFF", weight: 700 },
     body: { text: body, xPct: 6, yPct: 78, sizePct: 3.2, color: "#E5E5E5", weight: 400 },
+    ...addedProducts
   };
 }
