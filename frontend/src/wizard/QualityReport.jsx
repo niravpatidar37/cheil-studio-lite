@@ -10,7 +10,7 @@ function style(status) {
 
 export default function QualityReport({ report }) {
   if (!report) return null;
-  const overall = style(report.overall);
+  const overall = style(report.status);
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-[#111111] p-5">
