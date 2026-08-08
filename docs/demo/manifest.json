@@ -1,0 +1,44 @@
+{
+    "metadata": {
+        "campaignName": "Galaxy S26",
+        "campaignType": "email",
+        "generationSource": "mock",
+        "products": [
+            {
+                "id": "Galaxy S26",
+                "name": "Galaxy S26",
+                "image_url": "/product_s26.jpg"
+            }
+        ],
+        "generated_at": "2026-08-08T12:00:00Z"
+    },
+    "configuration": {
+        "formats": [
+            "Promotional Blast"
+        ],
+        "audiences": [
+            "Young professionals"
+        ],
+        "brief": "Launch the new Galaxy S26 Ultra in Canada, highlighting its AI camera features."
+    },
+    "assets": {
+        "Promotional Blast": {
+            "en": {
+                "subject": "Galaxy S26 is here",
+                "preheader": "Built with young professionals in mind.",
+                "headline": "Meet the Galaxy S26",
+                "body": "Highlight how this fits perfectly into daily life.\n\nExplore what the Galaxy S26 can do for you.",
+                "cta_label": "Explore now",
+                "preference_options": []
+            },
+            "fr": {
+                "subject": "Le Galaxy S26 est arrivé",
+                "preheader": "Conçu en pensant à vous.",
+                "headline": "Découvrez le Galaxy S26",
+                "body": "Montrez comment cela s'intègre parfaitement au quotidien.\n\nDécouvrez tout ce que le Galaxy S26 peut faire pour vous.",
+                "cta_label": "Découvrir",
+                "preference_options": []
+            }
+        }
+    }
+}

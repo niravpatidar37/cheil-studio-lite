@@ -1,144 +1,82 @@
 # Cheil Studio Lite
 
-Internal marketing-campaign studio for Samsung creative work. A 9-step wizard takes a
-campaign brief through creative directions, product/format selection, audience targeting,
-and AI-generated bilingual (EN / fr-CA) copy, ending in a downloadable ZIP package.
+## What it does
+Internal marketing-campaign studio for Samsung creative work. A 9-step wizard takes a campaign brief through creative directions, product/format selection, audience targeting, and AI-generated bilingual (EN / fr-CA) copy, ending in a deterministically verified downloadable ZIP package.
 
 Three campaign types are supported: **Image**, **Video**, and **Email**.
 
-## Stack
+## Run locally
 
-- **Backend** — FastAPI + Google Gemini (`google-genai`), managed with `uv`
-- **Frontend** — React + Vite + Tailwind CSS v4
-- **Storage** — SQLite (`studio.db`, created on first run, gitignored)
-- **Tracing** — Langfuse, optional and no-op when unconfigured
-
-## Setup
-
-### 1. Backend dependencies
-
+### 1. Prerequisites & Installation
 ```bash
+# Backend
 uv sync
-```
 
-### 2. Credentials
-
-Copy `backend/.env.example` to `.env` **at the project root** and fill in one of the two
-auth modes. The root `.env` is gitignored.
-
-**Mode A — Vertex AI with a service account** (required if your org blocks API keys):
-
-```
-GOOGLE_GENAI_USE_VERTEXAI=true
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-GOOGLE_APPLICATION_CREDENTIALS=F:/cheil-studio-lite/backend/service-account.json
-```
-
-The service account needs the **Vertex AI User** (`roles/aiplatform.user`) role, and the
-**Vertex AI API** must be enabled on the project.
-
-**Mode B — AI Studio API key** (simpler):
-
-```
-GEMINI_API_KEY=AIzaSy...
-```
-
-> Service-account JSON files are gitignored. Never commit real credentials, and never put
-> a real key in `.env.example` — that file is committed.
-
-### 3. Frontend dependencies
-
-```bash
+# Frontend
 cd frontend && npm install
 ```
 
-## Running
+### 2. Credentials
+Copy `backend/.env.example` to `.env` **at the project root**.
+To use Live AI functionality, you need either Vertex AI service accounts or a Gemini API Studio Key:
+```
+GEMINI_API_KEY=AIzaSy...
+```
+*(If no key is configured, you can simply use Demo Mode!)*
 
-Two processes, in separate terminals:
-
+### 3. Startup
+Terminal 1 (Backend):
 ```bash
-# Terminal 1 — API on :8000
 uv run uvicorn backend.main:app --reload --port 8000
-
-# Terminal 2 — UI on :5173 (proxies /api to the backend)
+```
+Terminal 2 (Frontend):
+```bash
 cd frontend && npm run dev
 ```
+Open `http://localhost:5173`.
 
-Open http://localhost:5173.
+## Demo in 5 mins
+Want to skip the API setup and immediately see the Studio Lite's capabilities? 
+1. Make sure both frontend and backend are running.
+2. Go to `http://localhost:5173`.
+3. In the top right header, check the **Demo mode (no AI key)** toggle.
+4. Click **Load Samsung demo campaign** on the Home screen.
+5. You'll be jumped directly to the final `Review & Export` screen with a fully built Samsung Galaxy S26 campaign, mock-populated assets, and ready to go for testing the guardrails.
+6. Check `docs/demo` for examples of what these demo exports look like.
 
-> `--reload` only watches `.py` files. After editing `.env`, restart the backend manually.
+## Workflow
+All three campaign types share a 9-step wizard (`STEP_LABELS` in `CampaignWizard.jsx`).
 
-**Without credentials the app still runs.** If Gemini is unavailable — no credentials,
-quota exhausted, API disabled — each step falls back to local example content from
-`frontend/src/lib/mockAgents.js` and shows an amber banner explaining why. The wizard
-stays fully usable, which makes it possible to work on the UI without burning quota.
+1. **Campaign Brief**: Name, objective, and short brief.
+2. **Product**: Pick catalog product(s) which ground the imagery.
+3. **Background**: Style & tone pre-selection.
+4. **Formats**: Banner size / Video cut / Email type.
+5. **Target Audience**: Demographic focusing.
+6. **Ideas & Copy**: `POST /api/ideas` — 3 directions (EN / fr-CA).
+7. **Asset Generation**: Image compositing or copy completion.
+8. **Edit**: Adjust layout, typography, or text blocks.
+9. **Review & Export**: Deterministic Guardrail check gating ZIP downloads.
 
-## Wizard flow
+## Objective mapping
+This update specifically tackles:
+1. **Determinism over LLMs**: Moving the "Export Guardrails" out of an LLM prompt and into a strict deterministic backend rule engine (`POST /api/quality-check`).
+2. **Mock Mode Honesty**: Explicitly building the Demo Mode rather than hiding mock callbacks in UI try/catches. Metadata in the built `manifest.json` tracks the AI vs Mock `source`.
+3. **Product Fidelity**: The original source catalog image configuration is maintained, exposed in the preview, and serialized into the output manifest.
+4. **Export Completeness**: Zips include exact html/png components as well as a JSON manifest.
 
-All three campaign types share one wizard engine (`STEP_LABELS` in
-`frontend/src/wizard/CampaignWizard.jsx`); the per-type pages supply the configuration
-that differs.
+## AI fallback honestly
+In earlier iterations, the UI would "silently" switch to a dummy mock script if Gemini timed out or had missing keys. This led to misrepresentative testing. 
+The system now expects explicit requests to `X-Demo-Mode: true`. The backend explicitly responds with `"source": "mock"`, allowing the UI to present accurate telemetry, load real static demo datasets, and accurately reflect whether it is being demoed offline or online. 
 
-| # | Step | What happens |
-| --- | --- | --- |
-| 1 | Campaign Brief | Name, objective, and free-text brief |
-| 2 | Product | Pick a catalog product — the shot also grounds image generation |
-| 3 | Background | Scene style / platform / tone preset |
-| 4 | Formats | Banner sizes, video cuts, or email types |
-| 5 | Target Audience | One or more audience segments |
-| 6 | Ideas & Copy | `POST /api/ideas` — 3 directions with EN + fr-CA copy |
-| 7 | Asset Generation | Backgrounds and per-format assets, prefetched from step 6 |
-| 8 | Edit | Banner editor / email preview — layout, logo, copy placement |
-| 9 | Export | Quality check, then ZIP download |
+## Architecture
 
-Progress is saved automatically, so a campaign can be closed and resumed from the home
-page at any step.
+- **Backend** — FastAPI + Google Gemini (`google-genai`), managed with `uv`
+- **Frontend** — React + Vite + Tailwind CSS v4
+- **Storage** — SQLite (`studio.db`) local saves
+- **Tracing** — Langfuse
 
-## API
+See `docs/ARCHITECTURE.md` for historical insights into how banner layout generation is configured to span everything from 9:16 mobile to 4:1 desktop hoardings.
 
-| Endpoint | Wizard step | Produces |
-| --- | --- | --- |
-| `POST /api/ideas` | 6 | 3 creative directions + headline/body copy, EN + FR |
-| `POST /api/backgrounds` | 7 | One background scene per unique aspect ratio |
-| `POST /api/background` | 8 | A single regenerated background, from the editor |
-| `POST /api/assets` | 7 | Per-format copy for video / email campaigns, EN + FR |
-| `POST /api/quality-check` | 9 | Guardrail review that gates the ZIP download |
-
-Image generation runs as a job rather than a request: `POST /api/jobs/images` returns an
-id immediately and `GET /api/jobs/{id}` reports progress. Campaigns are CRUD under
-`/api/campaigns`, and generated images are served from `/api/images/{id}`.
-
-## Project layout
-
-```
-backend/
-  main.py             FastAPI app, product catalog, /api routes
-  gemini_service.py   Gemini client, Samsung brand-voice prompt, generation logic
-  store.py            SQLite: campaigns, jobs, image blobs
-  observability.py    Langfuse tracing (no-op without keys)
-frontend/
-  src/wizard/         Shared 9-step wizard engine + step components
-  src/pages/          Per-campaign-type config (Image / Video / Email)
-  src/components/     Header, cards, campaign list
-  src/lib/            API client, fallback content, presets, ZIP export
-  public/             Catalog product shots + brand marks (served, and used as
-                      image-generation references)
-assets/               Original source artwork the catalog was cut from
-docs/ARCHITECTURE.md  Why the code is shaped the way it is
-pyproject.toml        Backend dependencies (uv)
-.env.example          Credential template — copy to .env at the project root
-```
-
-Untracked by design: `.env`, `backend/service-account.json`, `studio.db`, `.venv/`,
-`frontend/node_modules/`, and `frontend/dist/`. See [.gitignore](.gitignore).
-
-## Design decisions
-
-The non-obvious choices — durable campaigns and job-based image generation, product
-grounding with a reference image, the banner layout rules that keep a 4:1 hoarding and a
-9:16 mobile canvas both correct, the email strategy briefs, and what Langfuse captures —
-are written up in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
-
-Read it before changing the banner exporter or the generation prompts. Several of those
-rules exist because the obvious alternative was tried first and failed.
+## Known limitations
+- Translation currently uses the same Gemini provider endpoint, which may cause tone variations if LLMs change.
+- The built-in Vitest suites cover unit states but do not run full headless browser composites for the rasterized banner downloads.

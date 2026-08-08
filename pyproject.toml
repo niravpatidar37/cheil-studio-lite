@@ -8,6 +8,9 @@ dependencies = [
     "fastapi>=0.141.1",
     "google-genai>=2.15.0",
     "langfuse>=4.14.2",
+    "pypdf>=6.15.0",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.32",
     "uvicorn[standard]>=0.52.0",
 ]

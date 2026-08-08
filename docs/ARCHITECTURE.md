@@ -61,11 +61,9 @@ setup as context.
 ## Product grounding
 
 The image model does not know what a "Galaxy S26" looks like — left to a text prompt it
-invented abstract crystals and generic handsets. So the catalog shot the user selected on
-the Product step is sent with the request as a reference image part, with instructions to
-reproduce that device exactly (model, colour, finish, camera layout, accessories) and to
-use no other source for its appearance. The reference's own plain background and framing
-are explicitly *not* copied — the device is relit into the generated scene.
+invented abstract crystals and generic handsets. 
+
+To ensure strict brand compliance, **we completely decoupled the product from the AI illustration**. The frontend now instructs the generation suite to build an entirely *empty* studio or lifestyle environment, requesting generous negative space. Once returned to the client, the original pristine catalog PNG is layered exactly on top using React/Canvas native compositing. This approach completely eliminates architectural hallucinations (e.g., incorrect camera mounts or missing styluses) while retaining dynamic lighting moods in the backdrop. The original product image is passed as context just so the model natively understands the 'vibe' it is styling its empty backdrop for.
 
 Catalog images live in `frontend/public/` as PNG. `productReferencePng()` decodes whatever
 the catalog ships through a canvas, so AVIF sources keep working without adding an
@@ -91,9 +89,7 @@ ungrounded generation rather than failing the step.
   preset gradient — a cropped real scene is the better failure mode. Reported as
   `degraded` in the response and surfaced in the UI.
 
-Wall time is dominated by Vertex shared-capacity throttling and retry backoff, not by our
-code: a measured four-format batch runs ~80s, and a single 429'd format can spend 45s in
-backoff alone.
+Wall time was previously dominated by Vertex shared-capacity throttling. To resolve this without forcing hostile local throttling or degrading UX, we completely migrated the core generation engine to natively route to \`gemini-2.5-flash\`, which substantially eliminated 429 backoff capacity exhaustion while sustaining rapid response integrity.
 
 ## Banner layout
 
@@ -136,6 +132,8 @@ Very tall formats are also capped on screen via `previewStyle()`: Mobile at full
 width rendered ~1170px tall, which made the Edit step three screens long. The cap is
 applied to *width* derived from a target height — a `max-height` on an aspect-ratio box
 would let it go shorter than its ratio and desynchronise the preview from the export.
+
+**Unvisited canvas tabs securely fallback.** If a user rushes straight from Generation (Step 7) to Export (Step 9) without opening every single layout permutation, the ZIP exporter intercepts the empty DOM ref. It automatically synthetically reconstructs the full state payload (incorporating the decoupled PNG graphic, dynamic CSS background, and localized translation slice) entirely dynamically, ensuring the downloaded bundle is flawless regardless of explicit UX traversal.
 
 ## Email
 
@@ -209,6 +207,7 @@ should ever fail because tracing is down.
 | Tokens | `input`, `output`, `output_reasoning`, `input_cached` |
 | Cost | Derived from `PRICING` in `observability.py` — update it if Google changes rates |
 | Feedback scores | `guardrail_verdict` (categorical), `guardrail_pass` (0/1), `image_success_rate` (ratio) |
+| Quantitative Grading | The LLM-as-a-judge emits a strict JSON 6-metric grading block per review, linearly mapped to Langfuse `obs.score` multi-dimensional arrays to continuously track model alignment degradation. |
 
 **Retries are traced individually.** Each image attempt opens its own generation
 observation, so a throttled call that succeeds on attempt 3 shows all three —
@@ -233,3 +232,8 @@ like an author.
 `CampaignWizard` but imported only into `BannerEditor` passed `vite build` cleanly and
 white-screened at runtime, on one format only. Vite does not do that scope analysis;
 the linter does.
+
+
+##Tracing 
+
+![alt text](image.png)
