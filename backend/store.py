@@ -36,6 +36,7 @@ DB_PATH = os.environ.get(
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
     id            TEXT PRIMARY KEY,
+    owner_id      TEXT,
     name          TEXT NOT NULL,
     campaign_type TEXT NOT NULL,
     status        TEXT NOT NULL DEFAULT 'draft',
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
 
 CREATE TABLE IF NOT EXISTS jobs (
     id          TEXT PRIMARY KEY,
+    owner_id    TEXT,
     campaign_id TEXT,
     kind        TEXT NOT NULL,
     status      TEXT NOT NULL,
@@ -90,11 +92,19 @@ def init_db() -> None:
         # WAL lets a poll of /api/jobs read while an image write is in flight.
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript(SCHEMA)
-
+        try:
+            c.execute("ALTER TABLE campaigns ADD COLUMN owner_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE jobs ADD COLUMN owner_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 # --- Campaigns -------------------------------------------------------------
 def save_campaign(
     campaign_id: str | None,
+    owner_id: str | None,
     name: str,
     campaign_type: str,
     state: dict,
@@ -107,9 +117,9 @@ def save_campaign(
         if campaign_id:
             updated = c.execute(
                 """UPDATE campaigns
-                      SET name = ?, campaign_type = ?, status = ?, state = ?, updated_at = ?
+                      SET owner_id = ?, name = ?, campaign_type = ?, status = ?, state = ?, updated_at = ?
                     WHERE id = ?""",
-                (name, campaign_type, status, payload, now, campaign_id),
+                (owner_id, name, campaign_type, status, payload, now, campaign_id),
             ).rowcount
             if updated:
                 return campaign_id
@@ -118,47 +128,61 @@ def save_campaign(
             # the work or silently minting a different one.
         new_id = campaign_id or uuid.uuid4().hex
         c.execute(
-            """INSERT INTO campaigns (id, name, campaign_type, status, state, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (new_id, name, campaign_type, status, payload, now, now),
+            """INSERT INTO campaigns (id, owner_id, name, campaign_type, status, state, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (new_id, owner_id, name, campaign_type, status, payload, now, now),
         )
         return new_id
 
 
-def get_campaign(campaign_id: str) -> dict | None:
+def get_campaign(campaign_id: str, owner_id: str | None = None) -> dict | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
-    if not row:
+    if not row or (owner_id and row["owner_id"] and row["owner_id"] != owner_id):
         return None
     return {**dict(row), "state": json.loads(row["state"])}
 
 
-def list_campaigns(limit: int = 50) -> list[dict]:
+def list_campaigns(owner_id: str | None = None, limit: int = 50) -> list[dict]:
     """Summaries only — the state document is deliberately not read here."""
     with _conn() as c:
-        rows = c.execute(
-            """SELECT id, name, campaign_type, status, created_at, updated_at
-                 FROM campaigns ORDER BY updated_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+        if owner_id:
+            rows = c.execute(
+                """SELECT id, name, campaign_type, status, created_at, updated_at
+                     FROM campaigns WHERE owner_id = ? ORDER BY updated_at DESC LIMIT ?""",
+                (owner_id, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                """SELECT id, name, campaign_type, status, created_at, updated_at
+                     FROM campaigns ORDER BY updated_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
-def delete_campaign(campaign_id: str) -> bool:
+def delete_campaign(campaign_id: str, owner_id: str | None = None) -> bool:
     with _conn() as c:
-        c.execute("DELETE FROM images WHERE campaign_id = ?", (campaign_id,))
-        return c.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,)).rowcount > 0
+        if owner_id:
+            updated = c.execute("DELETE FROM campaigns WHERE id = ? AND (owner_id = ? OR owner_id IS NULL)", (campaign_id, owner_id)).rowcount
+        else:
+            updated = c.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,)).rowcount
+            
+        if updated > 0:
+            c.execute("DELETE FROM images WHERE campaign_id = ?", (campaign_id,))
+            return True
+        return False
 
 
 # --- Jobs ------------------------------------------------------------------
-def create_job(kind: str, campaign_id: str | None, request: dict) -> str:
+def create_job(kind: str, campaign_id: str | None, owner_id: str | None, request: dict) -> str:
     job_id = uuid.uuid4().hex
     now = _now()
     with _conn() as c:
         c.execute(
-            """INSERT INTO jobs (id, campaign_id, kind, status, request, created_at, updated_at)
-               VALUES (?, ?, ?, 'queued', ?, ?, ?)""",
-            (job_id, campaign_id, kind, json.dumps(request), now, now),
+            """INSERT INTO jobs (id, owner_id, campaign_id, kind, status, request, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)""",
+            (job_id, owner_id, campaign_id, kind, json.dumps(request), now, now),
         )
     return job_id
 
@@ -171,10 +195,10 @@ def update_job(job_id: str, *, status: str, result: dict | None = None, error: s
         )
 
 
-def get_job(job_id: str) -> dict | None:
+def get_job(job_id: str, owner_id: str | None = None) -> dict | None:
     with _conn() as c:
         row = c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    if not row:
+    if not row or (owner_id and row["owner_id"] and row["owner_id"] != owner_id):
         return None
     job = dict(row)
     job["request"] = json.loads(job["request"]) if job["request"] else None

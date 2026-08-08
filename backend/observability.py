@@ -107,7 +107,7 @@ def trace(name: str, *, run_type: str = "chain", input=None, metadata=None):
             yield span
     except Exception:
         logger.exception("Langfuse trace failed — continuing untraced")
-        yield None
+        raise
 
 
 @contextmanager
@@ -132,7 +132,7 @@ def generation(name: str, *, model: str, input=None, model_parameters=None):
             yield _Recorder(gen, model)
     except Exception:
         logger.exception("Langfuse generation failed — continuing untraced")
-        yield _NullRecorder()
+        raise
 
 
 class _NullRecorder:

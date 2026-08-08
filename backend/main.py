@@ -6,15 +6,24 @@ import asyncio
 import base64
 import logging
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Header, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pypdf import PdfReader
+from docx import Document as DocxDocument
 
-from . import gemini_service
+from . import mock_data
+from . import gemini as gemini_service
 from . import observability as obs
 from . import store
 
 logger = logging.getLogger(__name__)
+
+def is_demo_mode(x_demo_mode: str | None) -> bool:
+    if x_demo_mode == "true": return True
+    import os
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_GENAI_USE_VERTEXAI"): return True
+    return False
 
 app = FastAPI(title="Cheil Studio Lite API")
 
@@ -76,16 +85,16 @@ class IdeaModel(BaseModel):
     fr: str
 
 
-class IdeasRequest(BaseModel):
+class IdeaGenRequest(BaseModel):
+    product: str
     brief: str
-    # `products` carries the whole set when the campaign covers several at once,
-    # all weighted equally. `product` is a single-name fallback, kept optional so
-    # saved campaigns and older clients that only ever sent one keep working.
-    product: str = ""
+    background: str
+    formats: list[str]
+    audiences: list[str]
     products: list[str] = []
-    background: str = ""
-    formats: list[str] = []
-    audiences: list[str] = []
+
+class IdeaTranslateRequest(BaseModel):
+    ideas: list[dict]
 
 
 class LogoPlacement(BaseModel):
@@ -146,6 +155,7 @@ class ImageJobRequest(BaseModel):
     product_image: str = ""
     product_images: list[str] = []
     campaign_id: str | None = None
+    brief: str = ""
 
 
 class CampaignSaveRequest(BaseModel):
@@ -176,36 +186,81 @@ def _gemini_error(e: Exception) -> HTTPException:
         reason = "API key rejected"
     elif "DEADLINE_EXCEEDED" in text or "timeout" in text.lower():
         reason = "the request timed out"
+    elif "Prompt blocked by" in text:
+        reason = text
     else:
         reason = "an unexpected API error"
 
     return HTTPException(status_code=502, detail=reason)
 
 
+@app.post("/api/extract-text")
+async def api_extract_text(file: UploadFile = File(...)):
+    filename = (file.filename or "").lower()
+    text = ""
+    try:
+        if filename.endswith(".pdf"):
+            reader = PdfReader(file.file)
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+        elif filename.endswith(".docx"):
+            doc = DocxDocument(file.file)
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text += para.text.strip() + "\n"
+        elif filename.endswith(".txt") or filename.endswith(".md"):
+            content = await file.read()
+            text = content.decode("utf-8")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+    except Exception as e:
+        logger.exception("Document extraction failed")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"text": text.strip()}
+
 @app.post("/api/ideas")
-async def api_generate_ideas(req: IdeasRequest):
-    with obs.trace(
-        "ideas-and-copy",
-        run_type="chain",
-        input={"brief": req.brief, "product": req.product, "formats": req.formats},
-        metadata={"audiences": req.audiences, "background": req.background},
-    ):
+async def api_generate_ideas(req: IdeaGenRequest, owner_id: str = Header(None, alias="X-Owner-Id"), x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
+    if is_demo_mode(x_demo_mode):
+        return {"ideas": mock_data.generate_ideas(req.brief), "source": "mock"}
+        
+    with obs.trace("api-generate-ideas"):
         try:
             ideas = await gemini_service.generate_ideas(
-                req.brief,
-                req.product,
-                req.background,
-                req.formats,
-                req.audiences,
-                req.products,
+                brief=req.brief,
+                product=req.product,
+                background=req.background,
+                formats=req.formats,
+                audiences=req.audiences,
+                products=req.products,
             )
-            return {"ideas": ideas}
+            return {"ideas": ideas, "source": "ai"}
         except Exception as e:
-            raise _gemini_error(e)
+            raise HTTPException(status_code=500, detail=str(e))
+
+class IdeaTranslateRequest(BaseModel):
+    ideas: list[dict]
+
+@app.post("/api/ideas/translate")
+async def api_translate_ideas(req: IdeaTranslateRequest, x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
+    if is_demo_mode(x_demo_mode):
+        return {"ideas": req.ideas, "source": "mock"}
+
+    print("====== [TRANSLATION INIT] ======")
+    print(f"Received Request: {len(req.ideas)} ideas.")
+    try:
+        translated = await gemini_service.translate_ideas(req.ideas)
+        print(f"====== [TRANSLATION SUCCESS] ======\nReturning payload: {translated}\n")
+        return {"ideas": translated, "source": "ai"}
+    except Exception as e:
+        print(f"====== [TRANSLATION CRASH] ======\n{str(e)}\n")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/api/quality-check")
-async def api_quality_check(req: QualityCheckRequest):
+async def api_quality_check(req: QualityCheckRequest, x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
+    # Quality check is now deterministic and independent of demo mode, but we can pass it through.
     with obs.trace(
         "quality-check",
         run_type="guardrail",
@@ -242,7 +297,18 @@ async def api_quality_check(req: QualityCheckRequest):
 
 
 @app.post("/api/assets")
-async def api_generate_assets(req: AssetsRequest):
+async def api_generate_assets(req: AssetsRequest, x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
+    if is_demo_mode(x_demo_mode):
+        if req.campaign_type == "image":
+            mock_a = mock_data.generate_image_assets(req.product, req.idea.model_dump(), req.formats, req.audiences)
+        elif req.campaign_type == "email":
+            mock_a = mock_data.generate_email_assets(req.product, req.idea.model_dump(), req.formats, req.audiences)
+        elif req.campaign_type == "video":
+            mock_a = mock_data.generate_video_assets(req.product, req.idea.model_dump(), req.formats, req.audiences)
+        else:
+            mock_a = {}
+        return {"assets": mock_a, "source": "mock"}
+
     with obs.trace(
         "assets",
         run_type="chain",
@@ -259,13 +325,16 @@ async def api_generate_assets(req: AssetsRequest):
                 req.brief,
                 req.products,
             )
-            return {"assets": assets}
+            return {"assets": assets, "source": "ai"}
         except Exception as e:
             raise _gemini_error(e)
 
 
 @app.post("/api/assets/revise")
-async def api_revise_assets(req: ReviseRequest):
+async def api_revise_assets(req: ReviseRequest, x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
+    if is_demo_mode(x_demo_mode):
+        return {"assets": req.assets, "source": "mock"}
+
     with obs.trace(
         "assets-revise",
         run_type="chain",
@@ -282,7 +351,7 @@ async def api_revise_assets(req: ReviseRequest):
                 req.brief,
                 req.products,
             )
-            return {"assets": assets}
+            return {"assets": assets, "source": "ai"}
         except Exception as e:
             raise _gemini_error(e)
 
@@ -327,6 +396,7 @@ async def _generate_images(req: "ImageJobRequest") -> dict:
                     req.product_image,
                     req.products,
                     req.product_images,
+                    req.brief,
                 )
 
         reps = [sizes[0] for sizes in groups.values()]
@@ -405,30 +475,29 @@ async def _run_image_job(job_id: str, req: "ImageJobRequest") -> None:
 
 
 @app.post("/api/jobs/images")
-async def api_enqueue_images(req: ImageJobRequest):
-    """Start image generation and return immediately.
-
-    Generation takes anywhere from 8s to 80s depending on Vertex capacity, which
-    is far too long to hold a request open. Ideas generation (~10s) deliberately
-    stays synchronous — durable job state is worth its complexity for the long,
-    expensive, retry-prone call, not for the short one.
-    """
-    # The product reference is a ~120 KB data URL. Keep it out of the stored
-    # request record; only whether one was supplied is worth keeping.
+async def api_enqueue_images(req: ImageJobRequest, x_owner_id: str | None = Header(None), x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
     summary = req.model_dump(exclude={"product_image"})
     summary["grounded"] = bool(req.product_image)
-    job_id = store.create_job("images", req.campaign_id, summary)
+    job_id = store.create_job("images", req.campaign_id, x_owner_id, summary)
+    
+    if is_demo_mode(x_demo_mode):
+        # Resolve it immediately
+        mock_res = {"images": {}, "failed": [], "degraded": []}
+        store.update_job(job_id, status="done", result=mock_res)
+        return {"job_id": job_id, "status": "done", "source": "mock"}
+
     task = asyncio.create_task(_run_image_job(job_id, req))
     _JOBS.add(task)  # hold a reference; a bare task can be garbage collected
     task.add_done_callback(_JOBS.discard)
-    return {"job_id": job_id, "status": "queued"}
+    return {"job_id": job_id, "status": "queued", "source": "ai"}
 
 
 @app.get("/api/jobs/{job_id}")
-def api_get_job(job_id: str):
-    job = store.get_job(job_id)
+def api_get_job(job_id: str, response: Response, x_owner_id: str | None = Header(None)):
+    job = store.get_job(job_id, x_owner_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     return job
 
 
@@ -449,29 +518,29 @@ def api_get_image(image_id: str):
 
 # --- Campaigns -------------------------------------------------------------
 @app.post("/api/campaigns")
-def api_save_campaign(req: CampaignSaveRequest):
+def api_save_campaign(req: CampaignSaveRequest, x_owner_id: str | None = Header(None)):
     campaign_id = store.save_campaign(
-        req.id, req.name, req.campaign_type, req.state, req.status
+        req.id, x_owner_id, req.name, req.campaign_type, req.state, req.status
     )
     return {"id": campaign_id}
 
 
 @app.get("/api/campaigns")
-def api_list_campaigns():
-    return {"campaigns": store.list_campaigns()}
+def api_list_campaigns(x_owner_id: str | None = Header(None)):
+    return {"campaigns": store.list_campaigns(x_owner_id)}
 
 
 @app.get("/api/campaigns/{campaign_id}")
-def api_get_campaign(campaign_id: str):
-    campaign = store.get_campaign(campaign_id)
+def api_get_campaign(campaign_id: str, x_owner_id: str | None = Header(None)):
+    campaign = store.get_campaign(campaign_id, x_owner_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="campaign not found")
     return campaign
 
 
 @app.delete("/api/campaigns/{campaign_id}")
-def api_delete_campaign(campaign_id: str):
-    if not store.delete_campaign(campaign_id):
+def api_delete_campaign(campaign_id: str, x_owner_id: str | None = Header(None)):
+    if not store.delete_campaign(campaign_id, x_owner_id):
         raise HTTPException(status_code=404, detail="campaign not found")
     return {"deleted": campaign_id}
 
