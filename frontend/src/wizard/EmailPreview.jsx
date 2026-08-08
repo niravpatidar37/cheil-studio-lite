@@ -14,7 +14,7 @@ const EMAIL_WIDTH = 600;
  * it up.
  */
 export default function EmailPreview({
-  data,
+  data = {},
   product,
   inline,
   lang,
@@ -55,9 +55,9 @@ export default function EmailPreview({
     <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
       <div className="border-b border-neutral-800 px-3 py-2">
         <p className="truncate text-xs text-neutral-400">
-          <span className="text-neutral-200">Samsung</span> · {data.subject || "(no subject)"}
+          <span className="text-neutral-200">Samsung</span> · {data?.subject || "(no subject)"}
         </p>
-        <p className="truncate text-[11px] text-neutral-600">{data.preheader}</p>
+        <p className="truncate text-[11px] text-neutral-600">{data?.preheader}</p>
       </div>
       <div ref={wrapRef} className="overflow-hidden bg-white" style={{ height }}>
         <iframe

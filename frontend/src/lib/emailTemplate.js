@@ -54,25 +54,26 @@ function readableOn(color) {
   return L > 0.5 ? "#111111" : "#FFFFFF";
 }
 
-const paragraphs = (body, color = "#333333") =>
+const paragraphs = (body, color = "#333333", alignment = "left") =>
   String(body ?? "")
     .split(/\n{2,}|\n/)
     .map((p) => p.trim())
     .filter(Boolean)
     .map(
       (p) =>
-        `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:${color};">${escape(p)}</p>`
+        `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${color};text-align:${alignment};">${escape(p)}</p>`
     )
     .join("");
 
-function button(label, accent) {
+function button(label, accent, alignment = "left") {
   const text = readableOn(accent);
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+  const alignStyle = alignment === "center" ? 'auto' : '0';
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${alignment}">
                 <tr>
-                  <td bgcolor="${accent}" style="background:${accent};border-radius:4px;">
-                    <a href="#cta" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:600;color:${text};text-decoration:none;">${escape(
-                      label
-                    )}</a>
+                  <td bgcolor="${accent}" style="background:${accent};border-radius:30px;">
+                    <a href="#cta" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:${text};text-decoration:none;">${escape(
+    label
+  )}</a>
                   </td>
                 </tr>
               </table>`;
@@ -86,17 +87,17 @@ function preferenceRows(options, lang) {
     .map(
       (opt) => `
               <tr><td style="padding:0 0 8px;">
-                <a href="#preferences" style="display:block;padding:12px 16px;border:1px solid #d4d4d4;border-radius:6px;font-size:14px;color:#111111;text-decoration:none;background:#fafafa;">${escape(
-                  opt
-                )}</a>
+                <a href="#preferences" style="display:block;padding:12px 16px;border:1px solid #d4d4d4;border-radius:6px;font-size:14px;color:#111111;text-align:center;text-decoration:none;background:#fafafa;">${escape(
+        opt
+      )}</a>
               </td></tr>`
     )
     .join("");
   return `
           <tr><td style="padding:8px 32px 0;">
-            <p style="margin:0 0 12px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#767676;">${escape(
-              label
-            )}</p>
+            <p style="margin:0 0 12px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#767676;text-align:${alignment};">${escape(
+    label
+  )}</p>
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${rows}</table>
           </td></tr>`;
 }
@@ -135,9 +136,8 @@ function shotRow(images, product, baseWidth) {
  */
 function heroBand({ css, fallback, onColor, logoImage, productImages, product, tall }) {
   const logo = logoImage
-    ? `<img src="${logoImage}" width="110" alt="Samsung" style="display:block;border:0;width:110px;height:auto;${
-        onColor === "#FFFFFF" ? "filter:brightness(0) invert(1);" : ""
-      }" />`
+    ? `<img src="${logoImage}" width="110" alt="Samsung" style="display:block;border:0;width:110px;height:auto;${onColor === "#FFFFFF" ? "filter:brightness(0) invert(1);" : ""
+    }" />`
     : `<span style="font-size:18px;font-weight:700;letter-spacing:.14em;color:${onColor};">SAMSUNG</span>`;
 
   const shot =
@@ -150,7 +150,7 @@ function heroBand({ css, fallback, onColor, logoImage, productImages, product, t
   return `<tr>
             <td bgcolor="${fallback}" style="background:${fallback};background-image:${css};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr><td style="padding:24px 32px ${tall ? "8px" : "24px"};">${logo}</td></tr>
+                <tr><td align="${alignment}" style="padding:32px 32px ${tall ? "12px" : "32px"};">${logo}</td></tr>
                 ${shot}
               </table>
             </td>
@@ -174,21 +174,33 @@ export function buildEmailHtml({
   const css = getBackgroundCss(background);
   const fallback = solidFallback(css);
   const onColor = readableOn(fallback);
-  const accent = design.accent || "#111111";
-  const showProduct = design.showProduct !== false;
+  const d = design || {};
+  const accent = d.accent || "#111111";
+  const showProduct = d.showProduct !== false;
+  const theme = d.theme || "classic";
+
+  const fontFamily = theme === "prestige"
+    ? "'Helvetica Neue', Helvetica, Arial, sans-serif"
+    : theme === "bold"
+      ? "'Arial Black', Impact, sans-serif"
+      : "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  const headlineSize = theme === "prestige" ? "36px" : theme === "bold" ? "42px" : "28px";
+  const headlineWeight = theme === "prestige" ? "400" : theme === "bold" ? "900" : "700";
+  const headlineSpacing = theme === "bold" ? "-1px" : "normal";
+  const alignment = theme === "prestige" ? "center" : "left";
 
   const footer =
     lang === "fr"
       ? {
-          why: "Vous recevez ce courriel parce que vous avez un compte Samsung.",
-          prefs: "Gérer mes préférences",
-          unsub: "Se désabonner",
-        }
+        why: "Vous recevez ce courriel parce que vous avez un compte Samsung.",
+        prefs: "Gérer mes préférences",
+        unsub: "Se désabonner",
+      }
       : {
-          why: "You are receiving this because you have a Samsung account.",
-          prefs: "Manage preferences",
-          unsub: "Unsubscribe",
-        };
+        why: "You are receiving this because you have a Samsung account.",
+        prefs: "Manage preferences",
+        unsub: "Unsubscribe",
+      };
 
   // Callers may pass a list (a bundle) or the single shot the template took
   // before bundles existed; normalise so the rest of this only handles a list.
@@ -211,22 +223,21 @@ export function buildEmailHtml({
   // headline out of the colour; the rest state the headline on white.
   const headlineBlock =
     variant === "offer"
-      ? `<tr><td bgcolor="${fallback}" style="background:${fallback};background-image:${css};padding:0 32px 28px;">
-           <h1 style="margin:0;font-size:28px;line-height:1.2;font-weight:700;color:${onColor};">${escape(
-             c.headline
-           )}</h1>
+      ? `<tr><td align="${alignment}" bgcolor="${fallback}" style="background:${fallback};background-image:${css};padding:12px 32px 32px;">
+           <h1 style="margin:0;font-size:${headlineSize};line-height:1.15;font-weight:${headlineWeight};letter-spacing:${headlineSpacing};color:${onColor};">${escape(
+        c.headline
+      )}</h1>
          </td></tr>
-         <tr><td style="padding:24px 32px 0;">${paragraphs(c.body)}</td></tr>`
-      : `<tr><td style="padding:${variant === "editorial" ? "28px" : "24px"} 32px 0;">
-           ${
-             variant === "editorial"
-               ? `<div style="width:44px;height:3px;background:${fallback};margin:0 0 16px;"></div>`
-               : ""
-           }
-           <h1 style="margin:0 0 12px;font-size:26px;line-height:1.25;font-weight:700;color:#111111;">${escape(
-             c.headline
-           )}</h1>
-           ${paragraphs(c.body)}
+         <tr><td align="${alignment}" style="padding:32px 32px 0;">${paragraphs(c.body, "#333333", alignment)}</td></tr>`
+      : `<tr><td align="${alignment}" style="padding:${variant === "editorial" ? "28px" : "32px"} 32px 0;">
+           ${variant === "editorial"
+        ? `<div style="width:44px;height:3px;background:${fallback};margin:0 0 16px ${alignment === 'center' ? 'auto' : '0'};"></div>`
+        : ""
+      }
+           <h1 style="margin:0 0 16px;font-size:${headlineSize};line-height:1.2;font-weight:${headlineWeight};letter-spacing:${headlineSpacing};color:#111111;">${escape(
+        c.headline
+      )}</h1>
+           ${paragraphs(c.body, "#333333", alignment)}
          </td></tr>`;
 
   // A product shot that did not go in the band sits inline, except for
@@ -253,21 +264,21 @@ export function buildEmailHtml({
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f2f2f2;">
     <tr>
       <td align="center" style="padding:24px 12px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:8px;overflow:hidden;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:16px;box-shadow:0 12px 24px rgba(0,0,0,0.08);overflow:hidden;font-family:${fontFamily};">
 ${hero}
 ${inlineShot}
 ${headlineBlock}
 ${preferenceRows(c.preference_options, lang)}
           <tr>
             <td style="padding:20px 32px 32px;">
-              ${button(c.cta_label, accent)}
+              ${button(c.cta_label, accent, alignment)}
             </td>
           </tr>
           <tr>
             <td style="padding:20px 32px 28px;border-top:1px solid #e6e6e6;">
               <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#767676;">${escape(
-                footer.why
-              )}</p>
+    footer.why
+  )}</p>
               <p style="margin:0;font-size:12px;color:#767676;">
                 <a href="#preferences" style="color:#767676;">${escape(footer.prefs)}</a>
                 &nbsp;·&nbsp;

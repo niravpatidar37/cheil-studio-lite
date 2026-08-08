@@ -7,7 +7,7 @@ import EmailControls from "./EmailControls";
  * design controls the banner editor offers.
  */
 export default function EmailStudio({
-  data,
+  data = {},
   onFieldChange,
   product,
   inline,
@@ -35,19 +35,19 @@ export default function EmailStudio({
 
       <div className="space-y-3">
         <Field label="Subject">
-          <TextInput value={data.subject || ""} onChange={(v) => onFieldChange("subject", v)} />
+          <TextInput value={data?.subject || ""} onChange={(v) => onFieldChange("subject", v)} />
         </Field>
         <Field label="Preheader">
-          <TextInput value={data.preheader || ""} onChange={(v) => onFieldChange("preheader", v)} />
+          <TextInput value={data?.preheader || ""} onChange={(v) => onFieldChange("preheader", v)} />
         </Field>
         <Field label="Headline">
-          <TextInput value={data.headline || ""} onChange={(v) => onFieldChange("headline", v)} />
+          <TextInput value={data?.headline || ""} onChange={(v) => onFieldChange("headline", v)} />
         </Field>
         <Field label="Body">
-          <TextArea value={data.body || ""} onChange={(v) => onFieldChange("body", v)} rows={7} />
+          <TextArea value={data?.body || ""} onChange={(v) => onFieldChange("body", v)} rows={7} />
         </Field>
         <Field label="Button label">
-          <TextInput value={data.cta_label || ""} onChange={(v) => onFieldChange("cta_label", v)} />
+          <TextInput value={data?.cta_label || ""} onChange={(v) => onFieldChange("cta_label", v)} />
         </Field>
 
         {options.length > 0 && (

@@ -97,7 +97,7 @@ function TimingNote({ timing, label }) {
     <p className="mt-3 text-xs text-neutral-500">
       {label} generated in {secs(timing.ms)}
       {prefetched
-        ? ` · started in the background, so you waited ${secs(timing.waited)}`
+        ? ` · Optimized via background prefetching (Wait time: ${secs(timing.waited)})`
         : ""}
     </p>
   );

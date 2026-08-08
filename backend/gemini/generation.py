@@ -179,12 +179,12 @@ survive into what you write, stated exactly as the brief states it. Do not round
 rephrase or drop a number. Do not invent specifics the brief does not contain.
 
 For each direction provide:
-- en: The overall concept in 3-4 sentences. Include: (1) The Single Narrative Thread (a simple, bold claim), (2) The Use-Case Personalization (real-world proof), and (3) an Experiential/Partnership Idea proving the value in real-time.
-- headline_en: the Hero Asset Hook (banner headline), maximum 8 words, sentence case
-- body_en: the Hero Asset Proof, Belief & Action (supporting body copy), maximum 25 words
+- en: The overall concept in 1-2 concise sentences. Quickly state the core hook and real-world proof.
+- headline_en: the Hero Asset Hook (banner headline), maximum 6 words
+- body_en: the Hero Asset Proof, maximum 15 words
 
 Return exactly 2 items."""
-    parsed: IdeasList = await _generate(prompt, IdeasList, temperature=0.9, name="ideas-and-copy")
+    parsed: IdeasList = await _generate(prompt, IdeasList, temperature=0.7, name="ideas-and-copy")
     return [
         {"id": i + 1, **item.model_dump()} for i, item in enumerate(parsed.ideas)
     ]
