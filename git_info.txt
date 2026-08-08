@@ -1,9 +1,0 @@
-BRANCHES:
-  aug4-updates
-* main
-
-LOG:
-6a94c0d Split design rationale out of README into docs/ARCHITECTURE.md
-1e193ab Add React wizard frontend with banner editor and email studio
-a6ce57d Add FastAPI backend with Gemini generation, SQLite store and tracing
-32ce1a2 Add project scaffolding, dependencies and README
