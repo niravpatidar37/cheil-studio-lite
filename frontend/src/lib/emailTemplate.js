@@ -54,14 +54,14 @@ function readableOn(color) {
   return L > 0.5 ? "#111111" : "#FFFFFF";
 }
 
-const paragraphs = (body, color = "#333333", alignment = "left") =>
+const paragraphs = (body, color = "#424245", alignment = "left") =>
   String(body ?? "")
     .split(/\n{2,}|\n/)
     .map((p) => p.trim())
     .filter(Boolean)
     .map(
       (p) =>
-        `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${color};text-align:${alignment};">${escape(p)}</p>`
+        `<p style="margin:0 0 20px;font-size:17px;line-height:1.55;color:${color};text-align:${alignment};">${escape(p)}</p>`
     )
     .join("");
 
@@ -70,8 +70,8 @@ function button(label, accent, alignment = "left") {
   const alignStyle = alignment === "center" ? 'auto' : '0';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${alignment}">
                 <tr>
-                  <td bgcolor="${accent}" style="background:${accent};border-radius:30px;">
-                    <a href="#cta" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:${text};text-decoration:none;">${escape(
+                  <td bgcolor="${accent}" style="background:${accent};border-radius:100px;">
+                    <a href="#cta" style="display:inline-block;padding:16px 36px;font-size:16px;font-weight:600;color:${text};text-decoration:none;">${escape(
     label
   )}</a>
                   </td>
@@ -134,7 +134,7 @@ function shotRow(images, product, baseWidth) {
  * presets image generation uses — with a solid `bgcolor` beneath it because
  * Outlook's Word engine ignores CSS gradients entirely.
  */
-function heroBand({ css, fallback, onColor, logoImage, productImages, product, tall }) {
+function heroBand({ css, fallback, onColor, logoImage, productImages, product, tall, alignment }) {
   const logo = logoImage
     ? `<img src="${logoImage}" width="110" alt="Samsung" style="display:block;border:0;width:110px;height:auto;${onColor === "#FFFFFF" ? "filter:brightness(0) invert(1);" : ""
     }" />`
@@ -142,15 +142,15 @@ function heroBand({ css, fallback, onColor, logoImage, productImages, product, t
 
   const shot =
     productImages?.length && tall
-      ? `<tr><td align="center" style="padding:4px 32px 28px;">
-             ${shotRow(productImages, product, 230)}
+      ? `<tr><td align="center" style="padding:0px 48px 48px;">
+             ${shotRow(productImages, product, 280)}
            </td></tr>`
       : "";
 
   return `<tr>
             <td bgcolor="${fallback}" style="background:${fallback};background-image:${css};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                <tr><td align="${alignment}" style="padding:32px 32px ${tall ? "12px" : "32px"};">${logo}</td></tr>
+                <tr><td align="${alignment}" style="padding:48px 48px ${tall ? "24px" : "48px"};">${logo}</td></tr>
                 ${shot}
               </table>
             </td>
@@ -217,27 +217,28 @@ export function buildEmailHtml({
     productImages: shots,
     product,
     tall: tallHero,
+    alignment,
   });
 
   // Editorial leads with a rule rather than a slab; offer reverses the
   // headline out of the colour; the rest state the headline on white.
   const headlineBlock =
     variant === "offer"
-      ? `<tr><td align="${alignment}" bgcolor="${fallback}" style="background:${fallback};background-image:${css};padding:12px 32px 32px;">
+      ? `<tr><td align="${alignment}" bgcolor="${fallback}" style="background:${fallback};background-image:${css};padding:12px 48px 48px;">
            <h1 style="margin:0;font-size:${headlineSize};line-height:1.15;font-weight:${headlineWeight};letter-spacing:${headlineSpacing};color:${onColor};">${escape(
         c.headline
       )}</h1>
          </td></tr>
-         <tr><td align="${alignment}" style="padding:32px 32px 0;">${paragraphs(c.body, "#333333", alignment)}</td></tr>`
-      : `<tr><td align="${alignment}" style="padding:${variant === "editorial" ? "28px" : "32px"} 32px 0;">
+         <tr><td align="${alignment}" style="padding:48px 48px 0;">${paragraphs(c.body, "#1D1D1F", alignment)}</td></tr>`
+      : `<tr><td align="${alignment}" style="padding:${variant === "editorial" ? "40px" : "48px"} 48px 0;">
            ${variant === "editorial"
-        ? `<div style="width:44px;height:3px;background:${fallback};margin:0 0 16px ${alignment === 'center' ? 'auto' : '0'};"></div>`
+        ? `<div style="width:44px;height:3px;background:${fallback};margin:0 0 20px ${alignment === 'center' ? 'auto' : '0'};"></div>`
         : ""
       }
-           <h1 style="margin:0 0 16px;font-size:${headlineSize};line-height:1.2;font-weight:${headlineWeight};letter-spacing:${headlineSpacing};color:#111111;">${escape(
+           <h1 style="margin:0 0 20px;font-size:${headlineSize};line-height:1.15;font-weight:${headlineWeight};letter-spacing:${headlineSpacing};color:#1D1D1F;">${escape(
         c.headline
       )}</h1>
-           ${paragraphs(c.body, "#333333", alignment)}
+           ${paragraphs(c.body, "#424245", alignment)}
          </td></tr>`;
 
   // A product shot that did not go in the band sits inline, except for
@@ -256,33 +257,33 @@ export function buildEmailHtml({
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${escape(c.subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:#f2f2f2;-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:#FAFAFC;-webkit-font-smoothing:antialiased;">
   <!-- Preheader: shown next to the subject in the inbox, hidden once opened. -->
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;height:0;width:0;">${escape(
     c.preheader
   )}</div>
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f2f2f2;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#FAFAFC;">
     <tr>
-      <td align="center" style="padding:24px 12px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:16px;box-shadow:0 12px 24px rgba(0,0,0,0.08);overflow:hidden;font-family:${fontFamily};">
+      <td align="center" style="padding:48px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:24px;border:1px solid #EAEAEA;box-shadow:0 20px 40px rgba(0,0,0,0.06);overflow:hidden;font-family:${fontFamily};">
 ${hero}
 ${inlineShot}
 ${headlineBlock}
 ${preferenceRows(c.preference_options, lang)}
           <tr>
-            <td style="padding:20px 32px 32px;">
+            <td style="padding:24px 48px 48px;">
               ${button(c.cta_label, accent, alignment)}
             </td>
           </tr>
           <tr>
-            <td style="padding:20px 32px 28px;border-top:1px solid #e6e6e6;">
-              <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:#767676;">${escape(
+            <td style="padding:32px 48px 40px;border-top:1px solid #F0F0F0;background:#FCFCFC;">
+              <p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#86868B;">${escape(
     footer.why
   )}</p>
-              <p style="margin:0;font-size:12px;color:#767676;">
-                <a href="#preferences" style="color:#767676;">${escape(footer.prefs)}</a>
-                &nbsp;·&nbsp;
-                <a href="#unsubscribe" style="color:#767676;">${escape(footer.unsub)}</a>
+              <p style="margin:0;font-size:13px;color:#86868B;">
+                <a href="#preferences" style="color:#86868B;text-decoration:underline;">${escape(footer.prefs)}</a>
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                <a href="#unsubscribe" style="color:#86868B;text-decoration:underline;">${escape(footer.unsub)}</a>
               </p>
             </td>
           </tr>

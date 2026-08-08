@@ -143,6 +143,8 @@ flexbox or grid, since Outlook renders with Word's engine and silently collapses
 anything modern. The ZIP carries the `.html` plus a `.txt` so copy can be reviewed and
 translated without opening a browser.
 
+**Premium Aesthetic Constraints:** To rival high-fidelity design standards like Apple and Samsung, the email layout builder enforces aggressive structural boundaries natively inside simple `<table width="600">` components. By overriding basic properties with large padding elements (48px internal boundaries), soft typographic grays (`#1D1D1F`), and pill-shaped call-to-action objects (100px radii), the resulting emails feel distinctly premium despite relying entirely on fundamental `HTML 4` structures. Furthermore, the `Design & Typography` panel is decoupled from the AI generator, giving users absolute CSS aesthetic override (Classic/Prestige/Bold styles) without rebilling the model.
+
 The preview is an **iframe fed the exact HTML the ZIP contains**. Rendering it as
 ordinary React would have let the app's stylesheet prop up a layout that has to stand
 on its own in a mail client. Brand assets are inlined once in the wizard and shared by
@@ -177,6 +179,9 @@ string matching rather than a judgement call, so it is computed in code — inst
 and it cannot change its mind between runs. Naming inactivity is a `fail`; missing
 preference controls is a `warn`. The check only appears when a re-engagement email is
 part of the campaign.
+
+## Document Brief Ingestion
+Marketing teams rarely start with plain text; they start with 15-page PDFs. The `POST /api/extract-text` endpoint exists to natively buffer `pypdf` and `python-docx` conversions over multipart file uploads. Instead of having the backend read the file invisibly during AI generation, we extract the string server-side, push it directly into the frontend Text Area, and let the user manually curate exactly what makes it into the final LLM Context. This guarantees no hidden unreviewed text poisons the output pipeline, letting users actively summarize or crop massive catalog PDFs.
 
 ## Acting on a quality verdict
 

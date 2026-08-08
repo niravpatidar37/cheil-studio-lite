@@ -63,6 +63,9 @@ This update specifically tackles:
 2. **Mock Mode Honesty**: Explicitly building the Demo Mode rather than hiding mock callbacks in UI try/catches. Metadata in the built `manifest.json` tracks the AI vs Mock `source`.
 3. **Product Fidelity**: The original source catalog image configuration is maintained, exposed in the preview, and serialized into the output manifest.
 4. **Export Completeness**: Zips include exact html/png components as well as a JSON manifest.
+5. **Advanced Document Parsing**: Users can bulk upload PDFs, DOCX, and text files directly into the Brief panel. The `POST /api/extract-text` endpoint extracts their full contextual data natively for instant ingestion.
+6. **Premium Apple-Tier Email Aesthetics**: Total overhaul of the Email templates (`emailTemplate.js`). We introduced multiple layout themes (Classic, Prestige, Bold) with luxury-tier typography, high-fidelity paddings (48px), floating wrappers with 24px radii, and dynamic accent styling.
+7. **Latent LLM Optimization**: The idea generation pipeline was stripped of "Token Bloat", throttling the background waiting time from 14+ seconds down to blazing fast metrics by enforcing ultra-short Hook+Proof models.
 
 ## AI fallback honestly
 In earlier iterations, the UI would "silently" switch to a dummy mock script if Gemini timed out or had missing keys. This led to misrepresentative testing. 

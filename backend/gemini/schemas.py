@@ -58,12 +58,12 @@ class VideoAssetsList(BaseModel):
     assets: list[VideoAssetItem]
 
 class EmailCopy(BaseModel):
-    subject: str
-    preheader: str
-    headline: str
-    body: str
-    cta_label: str
-    preference_options: list[str]
+    subject: str | None = None
+    preheader: str | None = None
+    headline: str | None = None
+    body: str | None = None
+    cta_label: str | None = None
+    preference_options: list[str] | None = None
 
 class EmailAssetItem(BaseModel):
     en: EmailCopy
