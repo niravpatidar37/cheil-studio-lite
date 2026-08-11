@@ -1285,7 +1285,7 @@ export default function CampaignWizard({
                 onClick={goNext}
                 disabled={busy}
                 busy={busy}
-                busyLabel="Generating images…"
+                busyLabel={campaignType === "image" ? "Generating images…" : "Compiling assets…"}
                 elapsed={elapsed}
               >
                 Continue to Edit
