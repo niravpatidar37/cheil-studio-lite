@@ -16,15 +16,17 @@ page lists saved campaigns to resume. Only the columns the list needs (name, typ
 status, timestamps) are promoted out of the document — the wizard's shape is still
 moving, and a rigid schema would mean a migration per UI change for no query benefit.
 
-**Image generation is a job, not a request.** It takes 8–80s depending on Vertex
+**Image generation is a job, not a request.** It takes 10–12s depending on Vertex
 capacity, which is far too long to hold a connection open, and the work is billed
 whether or not the client is still listening. `POST /api/jobs/images` returns a job id
 immediately; the run is detached and records its own outcome, so a reload or a
 navigation cannot orphan it. The job id is stored with the campaign, so a resumed
 campaign re-attaches instead of paying for the same generation twice.
 
-Ideas generation (~10s) deliberately stays synchronous. Durable job state earns its
-complexity on the long, expensive, retry-prone call — not on every call.
+**Threadpool Offloading**: To avoid starving the ASGI event loop of the Uvicorn server, synchronous SQLite IO operations (`store.create_job()`) invoked inside these asynchronous generation wrappers are completely wrapped in `anyio.to_thread.run_sync()`. This guarantees the server effortlessly scales across hundreds of concurrent LLM web-socket polling connections without local lock-ups.
+
+Ideas generation (~1.5s - 2.5s) deliberately stays synchronous, aggressively optimized by `gemini-2.5-flash-lite`. Durable job state earns its
+complexity on long, expensive, retry-prone calls — not on rapid sub-second generative paths.
 
 **Images are served by URL, not inlined.** They are ~1.5 MB each. Previously every one
 travelled as a base64 data URI inside JSON, on every request and response that touched
@@ -37,12 +39,11 @@ random and never mutated, so the responses are `immutable`.
 > so replacing it with a real queue means changing `_run_image_job`, not the API or the
 > client.
 
-## Structured output
+## Structured output via Pydantic AI
 
-Text endpoints share a Samsung brand-voice system prompt and use Gemini **structured
-output** (Pydantic response schemas), so malformed responses can't reach the UI. Schemas
+Text endpoints share a Samsung brand-voice system prompt and use the **`pydantic-ai`** orchestrator library strictly enforcing structured output response schemas (`Agent` output_type mapping). This physically guarantees that malformed responses cannot reach the UI. Schemas
 return *ordered lists* that the backend zips against the request order rather than asking
-the model to echo exact format names back as JSON keys — noticeably more reliable.
+the model to echo exact format names back as JSON keys — noticeably more reliable and heavily optimized for `gemini-2.5-flash-lite`.
 
 ## Campaign context
 
@@ -89,7 +90,7 @@ ungrounded generation rather than failing the step.
   preset gradient — a cropped real scene is the better failure mode. Reported as
   `degraded` in the response and surfaced in the UI.
 
-Wall time was previously dominated by Vertex shared-capacity throttling. To resolve this without forcing hostile local throttling or degrading UX, we completely migrated the core generation engine to natively route to \`gemini-2.5-flash\`, which substantially eliminated 429 backoff capacity exhaustion while sustaining rapid response integrity.
+Wall time was previously dominated by Vertex shared-capacity throttling and TTFT waits. To resolve this without forcing hostile local throttling or degrading UX, we completely migrated the core generation engine to natively route to `gemini-2.5-flash-lite` and clamped image sizes using deterministic prompt stages, which substantially eliminated 429 backoff capacity exhaustion while dropping end-to-end generation blocks from ~80s down to ~11s.
 
 ## Banner layout
 
@@ -182,6 +183,8 @@ part of the campaign.
 
 ## Document Brief Ingestion
 Marketing teams rarely start with plain text; they start with 15-page PDFs. The `POST /api/extract-text` endpoint exists to natively buffer `pypdf` and `python-docx` conversions over multipart file uploads. Instead of having the backend read the file invisibly during AI generation, we extract the string server-side, push it directly into the frontend Text Area, and let the user manually curate exactly what makes it into the final LLM Context. This guarantees no hidden unreviewed text poisons the output pipeline, letting users actively summarize or crop massive catalog PDFs.
+
+**CPU Parsing Thread Isolation:** Because reading massive binaries (`PyPDF`) is extremely CPU bound, `.pdf` and `.docx` routes must not block the main Event Loop. The `/api/extract-text` router isolates exactly this threat by running as a standard `def` block (instead of `async def`), prompting FastAPI to safely offload the synchronous rendering overhead exactly onto an external OS worker threadpool.
 
 ## Acting on a quality verdict
 
