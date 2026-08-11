@@ -242,6 +242,6 @@ white-screened at runtime, on one format only. Vite does not do that scope analy
 the linter does.
 
 
-##Tracing 
+## Tracing 
 
 ![alt text](image.png)
