@@ -31,9 +31,9 @@ Cheil Studio Lite acts as an internal marketing-production tool for a brand stud
 frontend (React + Vite + Tailwind, :5173)  →  backend (FastAPI + Python, :8000)  →  Google Gemini API
 ```
 
-- **Backend**: FastAPI + Google Gemini (`google-genai`), managed with `uv`.
+- **Backend**: FastAPI + Google Gemini (`google-genai`), managed with `uv`. Ensures horizontal scalability by delegating synchronous database writes onto isolated `anyio` threadpools to guarantee 100% ASGI event-loop freedom during file parsing or tracking.
 - **Frontend**: React + Vite + Tailwind CSS v4.
-- **Storage**: SQLite (`studio.db`) local saves.
+- **Storage**: SQLite (`studio.db`) local saves utilizing WAL journaling and background-thread mutations.
 - **Tracing**: Langfuse enabled telemetry mapping.
 
 ## Prerequisites

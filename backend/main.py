@@ -195,7 +195,7 @@ def _gemini_error(e: Exception) -> HTTPException:
 
 
 @app.post("/api/extract-text")
-async def api_extract_text(file: UploadFile = File(...)):
+def api_extract_text(file: UploadFile = File(...)):
     filename = (file.filename or "").lower()
     text = ""
     try:
@@ -209,7 +209,7 @@ async def api_extract_text(file: UploadFile = File(...)):
                 if para.text.strip():
                     text += para.text.strip() + "\n"
         elif filename.endswith(".txt") or filename.endswith(".md"):
-            content = await file.read()
+            content = file.file.read()
             text = content.decode("utf-8")
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format")
@@ -458,6 +458,9 @@ async def _generate_images(req: "ImageJobRequest") -> dict:
         return {"images": image_ids, "failed": failed, "degraded": degraded}
 
 
+import anyio
+import functools
+
 async def _run_image_job(job_id: str, req: "ImageJobRequest") -> None:
     """Own the work for one job and record its outcome.
 
@@ -465,25 +468,27 @@ async def _run_image_job(job_id: str, req: "ImageJobRequest") -> None:
     away, refreshes, or drops the connection does not abandon a generation that
     is already being billed.
     """
-    store.update_job(job_id, status="running")
+    await anyio.to_thread.run_sync(functools.partial(store.update_job, job_id, status="running"))
     try:
         result = await _generate_images(req)
-        store.update_job(job_id, status="done", result=result)
+        await anyio.to_thread.run_sync(functools.partial(store.update_job, job_id, status="done", result=result))
     except Exception as e:  # noqa: BLE001 — recorded on the job, not raised
         logger.exception("Image job %s failed", job_id)
-        store.update_job(job_id, status="error", error=_gemini_error(e).detail)
+        await anyio.to_thread.run_sync(functools.partial(store.update_job, job_id, status="error", error=_gemini_error(e).detail))
 
 
 @app.post("/api/jobs/images")
 async def api_enqueue_images(req: ImageJobRequest, x_owner_id: str | None = Header(None), x_demo_mode: str | None = Header(None, alias="X-Demo-Mode")):
     summary = req.model_dump(exclude={"product_image"})
     summary["grounded"] = bool(req.product_image)
-    job_id = store.create_job("images", req.campaign_id, x_owner_id, summary)
+    job_id = await anyio.to_thread.run_sync(
+        store.create_job, "images", req.campaign_id, x_owner_id, summary
+    )
     
     if is_demo_mode(x_demo_mode):
         # Resolve it immediately
         mock_res = {"images": {}, "failed": [], "degraded": []}
-        store.update_job(job_id, status="done", result=mock_res)
+        await anyio.to_thread.run_sync(functools.partial(store.update_job, job_id, status="done", result=mock_res))
         return {"job_id": job_id, "status": "done", "source": "mock"}
 
     task = asyncio.create_task(_run_image_job(job_id, req))
