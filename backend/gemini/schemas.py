@@ -6,7 +6,7 @@ class IdeaItem(BaseModel):
     body_en: str
 
 class IdeasList(BaseModel):
-    ideas: list[IdeaItem] = Field(min_length=2)
+    ideas: list[IdeaItem] = Field(min_length=3)
 
 class TranslatedIdeaItem(BaseModel):
     fr: str

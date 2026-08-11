@@ -68,7 +68,7 @@ We've achieved massive performance gains by overriding background generation lat
 
 ## Objective mapping
 This update specifically tackles:
-1. **Determinism over LLMs**: Moving the "Export Guardrails" out of an LLM prompt and into a strict deterministic backend rule engine (`POST /api/quality-check`).
+1. **Deterministic Guardrails & Auto-Fix**: Moving the "Export Guardrails" out of an LLM prompt and into a strict deterministic backend rule engine (`POST /api/quality-check`). If the backend detects a failed check (e.g., missing French copy or insufficient contrast), the UI immediately surfaces a one-click "Auto Fix" button that securely injects the missing parameters and automatically re-runs the checks. Crucially, **if one or more checks fail, the system rigidly blocks the user and does not allow them to download the ZIP file**, ensuring zero broken pipelines.
 2. **Mock Mode Honesty**: Explicitly building the Demo Mode rather than hiding mock callbacks in UI try/catches. Metadata in the built `manifest.json` tracks the AI vs Mock `source`.
 3. **Product Fidelity**: The original source catalog image configuration is maintained, exposed in the preview, and serialized into the output manifest.
 4. **Export Completeness**: Zips include exact html/png components as well as a JSON manifest.

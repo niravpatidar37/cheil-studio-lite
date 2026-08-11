@@ -96,7 +96,13 @@ export default function BannerEditor({
       onPointerMove={onDrag}
       onPointerUp={endDrag}
       onPointerLeave={endDrag}
-      onClick={() => onSelect(null)}
+      onPointerDown={(e) => {
+        // Only deselect if they clicked the background canvas directly,
+        // not if they clicked one of the draggable child layers.
+        if (e.target === e.currentTarget) {
+          onSelect(null);
+        }
+      }}
       className={`relative w-full overflow-hidden rounded-xl border border-neutral-700 select-none ${isDragging ? "cursor-grabbing" : ""
         }`}
       style={{ ...previewStyle(bannerSize, 560), containerType: "size", background: backgroundCss }}

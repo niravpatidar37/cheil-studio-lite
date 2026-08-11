@@ -81,6 +81,7 @@ export default function BannerStudio({
         productImage: reference,
       });
       setAiImage(imageUrl(result.images[bannerSize]));
+      setBackgroundMode("ai");
     } catch (err) {
       setError(err.message);
       setBackgroundMode("preset");
