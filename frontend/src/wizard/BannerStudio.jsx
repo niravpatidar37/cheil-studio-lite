@@ -25,7 +25,7 @@ export default function BannerStudio({
   onConfigChange,
   onFieldChange,
 }) {
-  const [layers, setLayers] = useState(() => defaultLayers(headline, body, productImage, productImages));
+  const [layers, setLayers] = useState(() => defaultLayers(headline, body, productImage, productImages, bannerSize));
   const [logo, setLogo] = useState({ show: true, xPct: 4, yPct: 6, sizePct: 12, color: "#FFFFFF" });
   const [selectedId, setSelectedId] = useState(null);
 

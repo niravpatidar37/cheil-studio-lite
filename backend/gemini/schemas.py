@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class IdeaItem(BaseModel):
     en: str
@@ -6,7 +6,7 @@ class IdeaItem(BaseModel):
     body_en: str
 
 class IdeasList(BaseModel):
-    ideas: list[IdeaItem]
+    ideas: list[IdeaItem] = Field(min_length=2)
 
 class TranslatedIdeaItem(BaseModel):
     fr: str

@@ -158,7 +158,7 @@ function LanguageToggle({ active, onChange, isTranslating }) {
 }
 
 /** Read-only composed preview shown on the Asset Generation step. */
-function BannerPreview({ bannerSize, image, backgroundCss, copy, generating, productImage }) {
+function BannerPreview({ bannerSize, image, backgroundCss, copy, generating, productImage, productImages = [] }) {
   const fit = backgroundFit(bannerSize);
 
   return (
@@ -210,14 +210,25 @@ function BannerPreview({ bannerSize, image, backgroundCss, copy, generating, pro
           {copy?.body}
         </p>
       </div>
-      {productImage && (
-        <img
-          src={productImage}
-          alt=""
-          className="absolute"
-          style={{ right: "8%", top: "15%", height: "70%", objectFit: "contain" }}
-        />
-      )}
+      {Object.entries(defaultLayers("", "", productImage, productImages, bannerSize)).map(([id, layer]) => {
+        if (id.startsWith("product") && layer.src) {
+          return (
+            <img
+              key={id}
+              src={layer.src}
+              alt=""
+              className="absolute"
+              style={{
+                left: `${layer.xPct}%`,
+                top: `${layer.yPct}%`,
+                width: `${layer.sizePct}cqmax`,
+                objectFit: "contain"
+              }}
+            />
+          );
+        }
+        return null;
+      })}
       {generating && !image && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-neutral-300">
           Generating image…
@@ -272,6 +283,7 @@ function FinalCopyPreview({ formats, assets, displayLang, setDisplayLang, active
                 backgroundCss={getBackgroundCss(secondary)}
                 copy={sample[displayLang]}
                 productImage={inlineAssets.productImage}
+                productImages={inlineAssets.productImages}
                 generating={busy}
               />
             </div>
@@ -518,7 +530,7 @@ export default function CampaignWizard({
     if (force) ideasJobRef.current.delete(ideasKey);
 
     const result = await runIdeasJob(ideasKey);
-    if (result.ok) {
+    if (result.ok && result.data && result.data.length > 0) {
       setIdeas(result.data);
       setSelectedIdeaId(result.data[0].id);
 
@@ -534,7 +546,8 @@ export default function CampaignWizard({
         })
         .finally(() => setIsTranslating(false));
     } else {
-      setError(`Gemini unavailable — ${result.err.message}.`);
+      const msg = result.err ? result.err.message : "Generated an empty set of ideas.";
+      setError(`Gemini unavailable — ${msg}`);
       ideasJobRef.current.delete(ideasKey); // a failure must not be cached
     }
     setTimings((t) => ({ ...t, ideas: { ms: result.ms, waited: Date.now() - clickedAt } }));
@@ -898,7 +911,7 @@ export default function CampaignWizard({
               bannerSize: fmt,
               backgroundCss: getBackgroundCss(secondary),
               backgroundImage: campaignType === "image" ? images[fmt] : null,
-              layers: defaultLayers(copy.headline || "", copy.body || "", inlineAssets.productImage, inlineAssets.productImages),
+              layers: defaultLayers(copy.headline || "", copy.body || "", inlineAssets.productImage, inlineAssets.productImages, fmt),
               logo: { show: true, xPct: 4, yPct: 6, sizePct: 12, color: "#FFFFFF" },
             };
           }
@@ -1078,12 +1091,12 @@ export default function CampaignWizard({
                   type="button"
                   onClick={() => setSecondary(preset.label)}
                   className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${secondary === preset.label
-                    ? "border-white bg-white/5"
+                    ? "border-white bg-white/5 shadow-sm"
                     : "border-neutral-800 hover:border-neutral-600"
                     }`}
                 >
-                  <span
-                    className="h-12 w-12 shrink-0 rounded-lg border border-neutral-700"
+                  <div
+                    className="h-12 w-12 shrink-0 rounded-lg border border-white/10 shadow-inner"
                     style={{ background: preset.css }}
                   />
                   <span className={`text-sm ${secondary === preset.label ? "font-medium text-white" : "text-neutral-400"}`}>
@@ -1239,6 +1252,7 @@ export default function CampaignWizard({
                     backgroundCss={getBackgroundCss(secondary)}
                     copy={assets[activeFormatTab]?.[displayLang]}
                     productImage={inlineAssets.productImage}
+                    productImages={inlineAssets.productImages}
                     generating={busy}
                   />
                 </div>

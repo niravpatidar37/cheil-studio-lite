@@ -173,7 +173,7 @@ export async function renderBanner({ bannerSize, backgroundCss, backgroundImage,
 
     const x = (layer.xPct / 100) * w;
     const y = (layer.yPct / 100) * h;
-    const maxWidth = w - x - (0.06 * w);
+    const maxWidth = layer.widthPct ? (layer.widthPct / 100) * w : w - x - (0.06 * w);
     const lines = wrapLines(ctx, layer.text, maxWidth);
     lines.forEach((line, i) => ctx.fillText(line, x, y + i * fontSize * 1.2));
   }

@@ -117,16 +117,21 @@ const SHOT_MAX_WIDTH = 520;
 function shotRow(images, product, baseWidth) {
   const list = (images || []).filter(Boolean);
   if (!list.length) return "";
-  const each = Math.floor(Math.min(baseWidth * list.length, SHOT_MAX_WIDTH) / list.length);
-  const cells = list
-    .map(
-      (src) =>
-        `<td align="center" valign="bottom" style="padding:0 6px;">
-           <img src="${src}" alt="${escape(product)}" width="${each}" style="display:block;border:0;width:${each}px;max-width:100%;height:auto;" />
-         </td>`
-    )
-    .join("");
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr>${cells}</tr></table>`;
+
+  const chunks = list.length > 3 ? Array.from({ length: Math.ceil(list.length / 3) }, (_, i) => list.slice(i * 3, i * 3 + 3)) : [list];
+
+  return chunks.map(chunk => {
+    const each = Math.floor(Math.min(baseWidth * chunk.length, SHOT_MAX_WIDTH) / chunk.length);
+    const cells = chunk
+      .map(
+        (src) =>
+          `<td align="center" valign="bottom" style="padding:0 6px;">
+             <img src="${src}" alt="${escape(product)}" width="${each}" style="display:block;border:0;width:${each}px;max-width:100%;height:auto;" />
+           </td>`
+      )
+      .join("");
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom:12px;"><tr>${cells}</tr></table>`;
+  }).join("");
 }
 
 /**

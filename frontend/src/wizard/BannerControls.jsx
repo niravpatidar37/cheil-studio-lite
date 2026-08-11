@@ -21,9 +21,8 @@ function Swatches({ value, onChange }) {
           type="button"
           onClick={() => onChange(c)}
           title={c}
-          className={`h-6 w-6 rounded-full border transition-transform ${
-            value === c ? "border-white scale-110" : "border-neutral-700 hover:border-neutral-500"
-          }`}
+          className={`h-6 w-6 rounded-full border transition-transform ${value === c ? "border-white scale-110" : "border-neutral-700 hover:border-neutral-500"
+            }`}
           style={{ background: c }}
         />
       ))}
@@ -68,11 +67,10 @@ export default function BannerControls({
             <button
               key={m}
               onClick={() => onBackgroundModeChange(m)}
-              className={`flex-1 rounded-md border px-2 py-1.5 text-xs transition-colors ${
-                backgroundMode === m
+              className={`flex-1 rounded-md border px-2 py-1.5 text-xs transition-colors ${backgroundMode === m
                   ? "border-white bg-white font-semibold text-black"
                   : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
-              }`}
+                }`}
             >
               {m === "ai" ? "AI image" : "Gradient / solid"}
             </button>
@@ -93,11 +91,10 @@ export default function BannerControls({
               <button
                 key={p.label}
                 onClick={() => onBackgroundStyleChange(p.label)}
-                className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${
-                  backgroundStyle === p.label ? "border-white bg-white/5" : "border-neutral-800 hover:border-neutral-600"
-                }`}
+                className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${backgroundStyle === p.label ? "border-white bg-white/5" : "border-neutral-800 hover:border-neutral-600"
+                  }`}
               >
-                <span className="h-5 w-5 shrink-0 rounded-full border border-neutral-700" style={{ background: p.css }} />
+                <div className="h-5 w-5 shrink-0 rounded-[4px] border border-white/15 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]" style={{ background: p.css }} />
                 <span className="text-xs text-neutral-300">{p.label}</span>
               </button>
             ))}
@@ -139,9 +136,8 @@ export default function BannerControls({
                   <button
                     key={c}
                     onClick={() => onLogoChange({ ...logo, color: c })}
-                    className={`h-6 w-6 rounded-full border ${
-                      logo.color === c ? "border-white scale-110" : "border-neutral-700"
-                    }`}
+                    className={`h-6 w-6 rounded-full border ${logo.color === c ? "border-white scale-110" : "border-neutral-700"
+                      }`}
                     style={{ background: c }}
                   />
                 ))}
@@ -188,11 +184,10 @@ export default function BannerControls({
                   <button
                     key={w}
                     onClick={() => update({ weight: w })}
-                    className={`flex-1 rounded-md border py-1 text-xs transition-colors ${
-                      layer.weight === w
+                    className={`flex-1 rounded-md border py-1 text-xs transition-colors ${layer.weight === w
                         ? "border-white bg-white font-semibold text-black"
                         : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
-                    }`}
+                      }`}
                   >
                     {w}
                   </button>

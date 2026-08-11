@@ -43,11 +43,13 @@ async def _generate(
     schema: type[BaseModel],
     temperature: float = 0.8,
     *,
+    guardrails: list = None,
     name: str = "generate",
     system: str = SAMSUNG_BRAND_VOICE,
     model_name: str = MODEL,
 ):
     client = get_client()
+
     with obs.generation(
         name,
         model=model_name,
@@ -55,30 +57,33 @@ async def _generate(
         model_parameters={"temperature": temperature, "schema": schema.__name__},
     ) as rec:
         import asyncio
+        from pydantic_ai import Agent
+        from pydantic_ai.models.google import GoogleModel
+
+        g_model = GoogleModel(
+            model_name,
+            provider=(
+                __import__('pydantic_ai.providers.google_cloud').providers.google_cloud.GoogleCloudProvider(client=client)
+                if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("1", "true", "yes")
+                else __import__('pydantic_ai.providers.google').providers.google.GoogleProvider(client=client)
+            )
+        )
+        agent = Agent(
+            g_model,
+            system_prompt=system,
+            output_type=schema,
+            capabilities=guardrails if guardrails else [],
+        )
+
         try:
             response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        response_mime_type="application/json",
-                        response_schema=schema,
-                        temperature=temperature,
-                    ),
-                ),
+                agent.run(prompt, model_settings={"temperature": temperature}),
                 timeout=45.0
             )
         except Exception as e:
             rec.fail(e)
             raise
-        cands = getattr(response, "candidates", None)
-        if not cands or not cands[0].content or not cands[0].content.parts:
-            feedback = getattr(response, "prompt_feedback", None)
-            reason = getattr(feedback, "block_reason", "unknown safety filter") if feedback else "safety controls"
-            msg = f"Prompt blocked by {reason}"
-            rec.fail(RuntimeError(msg))
-            raise RuntimeError(msg)
-            
-        rec.finish(response, output=response.text)
-        return response.parsed
+        
+        # Log string representation of the parsed output
+        rec.finish(response, output=str(response.output))
+        return response.output

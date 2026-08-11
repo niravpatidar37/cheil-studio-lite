@@ -8,6 +8,7 @@ from .client import get_client, _generate, IMAGE_MODEL, IMAGE_MAX_ATTEMPTS, IMAG
 from .schemas import (
     IdeasList, TranslatedIdeasList, QualityReport, ImageAssetsList, VideoAssetsList, EmailAssetsList
 )
+from pydantic_ai_harness import GuardrailResult, OutputGuardrail
 from .prompts import (
     REVIEWER_VOICE, CHECK_LABELS, LOGO_TOP_MAX_PCT, LOGO_BOTTOM_MIN_PCT,
     INACTIVITY_PHRASES, EMAIL_TYPE_GUIDANCE
@@ -184,7 +185,20 @@ For each direction provide:
 - body_en: the Hero Asset Proof, maximum 15 words
 
 Return exactly 2 items."""
-    parsed: IdeasList = await _generate(prompt, IdeasList, temperature=0.7, name="ideas-and-copy")
+    def check_competitor_brands(output: object) -> GuardrailResult:
+        text = str(output.model_dump()).lower()
+        if 'apple' in text or 'iphone' in text or 'dyson' in text:
+            return GuardrailResult.retry('Do not mention competitor brands like Apple or Dyson. Focus on Samsung.')
+        return GuardrailResult.allow()
+
+    parsed: IdeasList = await _generate(
+        prompt, 
+        schema=IdeasList, 
+        temperature=0.7, 
+        name="ideas-and-copy",
+        model_name="gemini-2.5-flash-lite",
+        guardrails=[OutputGuardrail(guard=check_competitor_brands)],
+    )
     return [
         {"id": i + 1, **item.model_dump()} for i, item in enumerate(parsed.ideas)
     ]
@@ -324,7 +338,7 @@ async def run_quality_check(
         "id": "legal",
         "criterion": "Required legal line",
         "status": "warn" if not has_legal else "pass",
-        "note": "No explicit legal line detected." if not has_legal else "Legal wording detected."
+        "note": "No explicit legal line detected. The body copy MUST specifically contain the words 'terms', 'conditions', 'applies', or 'legal' (e.g. 'Conditions apply')." if not has_legal else "Legal wording detected."
     })
     
     # 7. Logo Placement
@@ -495,7 +509,26 @@ Provide both English and Canadian French versions for each.
 {chr(10).join(f"{i + 1}. {f}" for i, f in enumerate(formats))}
 
 Return exactly {len(formats)} items, in the order listed."""
-        parsed: VideoAssetsList = await _generate(prompt, VideoAssetsList, temperature=0.85, name="assets-video")
+        def check_video_lengths(output: object) -> GuardrailResult:
+            generated_dict = {
+                f: {
+                    "en": {"hook": item.en.hook, "scenes": item.en.scenes, "cta": item.en.cta},
+                    "fr": {"hook": item.fr.hook, "scenes": item.fr.scenes, "cta": item.fr.cta},
+                }
+                for f, item in zip(formats, output.assets)
+            }
+            res = check_length(campaign_type, generated_dict, formats)
+            if res["status"] in ("warn", "fail"):
+                return GuardrailResult.retry(f"Copy length issue: {res['note']} Please fix it.")
+            return GuardrailResult.allow()
+
+        parsed: VideoAssetsList = await _generate(
+            prompt, 
+            VideoAssetsList, 
+            temperature=0.85, 
+            name="assets-video",
+            guardrails=[OutputGuardrail(guard=check_video_lengths)]
+        )
         return {
             f: {
                 "en": {"hook": item.en.hook, "scenes": item.en.scenes[:4], "cta": item.en.cta},
@@ -511,6 +544,8 @@ Return exactly {len(formats)} items, in the order listed."""
         )
         prompt = f"""{header}
 
+Write in a premium, punchy, Samsung marketing voice. Sell outcomes and lifestyle beliefs rather than boring functional specs. Use a confident, engaging, and inspiring tone. Avoid dry, robotic recitations of features.
+
 For each of the following {len(formats)} email types, in this exact order, write:
 - subject: a subject line (max 9 words)
 - preheader: the preview line shown beside the subject (max 12 words), and it must
@@ -525,7 +560,23 @@ Provide both English and Canadian French versions for each.
 {listed}
 
 Return exactly {len(formats)} items, in the order listed."""
-        parsed_e: EmailAssetsList = await _generate(prompt, EmailAssetsList, temperature=0.8, name="assets-email")
+        def check_email_lengths(output: object) -> GuardrailResult:
+            generated_dict = {
+                f: {"en": item.en.model_dump(), "fr": item.fr.model_dump()}
+                for f, item in zip(formats, output.assets)
+            }
+            res = check_length(campaign_type, generated_dict, formats)
+            if res["status"] in ("warn", "fail"):
+                return GuardrailResult.retry(f"Copy length issue: {res['note']} Please fix it.")
+            return GuardrailResult.allow()
+
+        parsed_e: EmailAssetsList = await _generate(
+            prompt, 
+            EmailAssetsList, 
+            temperature=0.8, 
+            name="assets-email",
+            guardrails=[OutputGuardrail(guard=check_email_lengths)]
+        )
         return {
             f: {"en": item.en.model_dump(), "fr": item.fr.model_dump()}
             for f, item in zip(formats, parsed_e.assets)
@@ -540,7 +591,23 @@ Provide both English and Canadian French versions for each.
 {chr(10).join(f"{i + 1}. {f}" for i, f in enumerate(formats))}
 
 Return exactly {len(formats)} items, in the order listed."""
-    parsed_i: ImageAssetsList = await _generate(prompt, ImageAssetsList, temperature=0.8, name="assets-image")
+    def check_image_lengths(output: object) -> GuardrailResult:
+        generated_dict = {
+            f: {"en": item.en.model_dump(), "fr": item.fr.model_dump()}
+            for f, item in zip(formats, output.assets)
+        }
+        res = check_length(campaign_type, generated_dict, formats)
+        if res["status"] in ("warn", "fail"):
+            return GuardrailResult.retry(f"Copy length issue: {res['note']} Please fix it.")
+        return GuardrailResult.allow()
+
+    parsed_i: ImageAssetsList = await _generate(
+        prompt, 
+        ImageAssetsList, 
+        temperature=0.8, 
+        name="assets-image",
+        guardrails=[OutputGuardrail(guard=check_image_lengths)]
+    )
     return {
         f: {"en": item.en.model_dump(), "fr": item.fr.model_dump()}
         for f, item in zip(formats, parsed_i.assets)
@@ -617,10 +684,7 @@ async def generate_background(
             "rectangle of any kind. "
         )
     else:
-        composition = (
-            "Leave generous empty negative space in the canvas for text and product graphics "
-            "to be added later in post-production. "
-        )
+        composition = "Leave generous empty negative space in the canvas for text and product graphics to be added later in post-production. "
 
     names = [p for p in (products or []) if p] or ([product] if product else [])
     sources = [s for s in (product_images or []) if s] or (
@@ -628,55 +692,45 @@ async def generate_background(
     )
     reference_parts = [p for p in (_decode_reference(s) for s in sources) if p is not None]
 
-    if len(reference_parts) > 1:
-        listed = "; ".join(
-            f"image {i + 1} is the {n}"
-            for i, n in enumerate(names[: len(reference_parts)])
-        )
-        grounding = (
-            f"{len(reference_parts)} product images are attached for reference: {listed}. "
-            f"You are generating a beautiful, highly aesthetic background environment or "
-            f"lifestyle stage for these products. Leave a massive amount of empty, "
-            f"negative space in the scene where the products will be placed later in post-production. "
-            f"DO NOT draw the products themselves! Repeat: Do not draw any devices or products "
-            f"in the image. Only generate the empty background environment, styled and lit "
-            f"purely environmental, sweeping landscape, or abstract aesthetic background.\n"
-            f"CRITICAL: Do not draw any phones, appliances, or devices. Do NOT draw silhouettes, outlines, glowing shapes, or wireframes of devices either. The stage MUST be completely empty of the product, serving only as a continuous background texture or real-world space."
-        )
-    elif reference_parts:
-        grounding = (
-            "The attached image is the product this banner is for. "
-            "You are generating a beautiful, highly aesthetic background environment or "
-            "lifestyle stage for this product. Leave a massive amount of empty, "
-            "negative space in the scene where the product will be placed later in post-production. "
-            "DO NOT draw the product itself! Repeat: Do not draw any devices or phones/appliances "
-            "in the image. Do NOT draw empty glowing silhouettes, outlines, or wireframes of phones either. "
-            "Just generate a completely continuous background environment, styled and lit "
-            "expertly to match the vibe of the attached reference."
-        )
-    else:
-        grounding = ""
-
     subject = " and ".join(names) if len(names) > 1 else (names[0] if names else product)
     discord_brief = brief or "(none supplied)"
 
-    base = (
-        f"A premium Samsung advertising image for the {subject}. "
-        f"Visual style: {style}. "
-        f"Cinematic studio lighting, minimal and uncluttered, high-end commercial photography."
-    )
-
     prompt = (
-        f"{base} "
-        f"Campaign brief: {discord_brief}. "
-        f"Creative direction: {idea_en}. "
-        f"{audience_line}"
-        f"{grounding}"
-        f"{composition}"
-        f"Fill the entire frame edge to edge. No black bars, no letterboxing, no "
-        f"cinematic bands, no vignette edges, no border, no rounded corners — the "
-        f"photograph must reach all four edges. "
-        f"Absolutely no text, no words, no letters, no logos, no watermarks anywhere in the image."
+        f"Generate a Samsung marketing background plate for the {subject}. "
+        f"Tone: confident, premium, human, never hype-y. Smart, not salesy. Prestige consumer electronics aesthetic.\n\n"
+        f"Visual style: {style}. Campaign brief: {discord_brief}. Creative direction: {idea_en}. "
+        f"{audience_line}\n\n"
+        f"Use any provided reference images STRICTLY as a guide for lighting quality, color palette, "
+        f"composition balance, and mood. Do NOT copy any product shape, device, screen, button, logo, "
+        f"text, or specific object from the reference. The reference is for style and atmosphere only.\n\n"
+        f"STAGE RULES — ABSOLUTE:\n"
+        f"The central 40% of the frame must remain completely empty. This zone is reserved for an official "
+        f"Samsung product image to be composited later. It must contain no objects, no people, no animals, "
+        f"no text, no logos, and no busy textures. The stage surface is a smooth, premium gradient — shifting "
+        f"from deep charcoal and Samsung blue at the edges to a softly lit neutral tone at the center. "
+        f"A gentle, natural shadow is cast onto the stage from the upper left, suggesting a single floating "
+        f"or standing premium object will occupy this space. The stage edges blend seamlessly into the surrounding atmosphere.\n\n"
+        f"SURROUNDING CONTEXT:\n"
+        f"The periphery frames the empty stage with abstract premium depth. Soft volumetric light rays drift "
+        f"from the upper left, creating subtle cinematic dimension. Gentle particles of light, soft bokeh, "
+        f"or abstract material textures float in the mid-ground — concentrated at the edges and never crossing "
+        f"into the center stage. The environment suggests innovation and human warmth without depicting any "
+        f"specific room, landscape, or identifiable setting. It feels like a space designed for something extraordinary.\n\n"
+        f"LIGHTING & ATMOSPHERE:\n"
+        f"Soft cinematic key light from the upper left. Even, gentle fill. Deep, confident shadows with rich contrast. "
+        f"Subtle rim-light potential around the stage boundary. The palette favors deep blacks, refined blues, "
+        f"and warm neutral accents. [ATMOSPHERE: Confident tech minimalism]. 8k, photorealistic, commercial "
+        f"advertising background plate, world-class campaign visual quality.\n\n"
+        f"ADDITIONAL COMPOSITION RULES: {composition}\n"
+        f"Fill the entire frame edge to edge. No black bars, no letterboxing, no cinematic bands, no vignette edges, "
+        f"no border, no rounded corners — the photograph must reach all four edges.\n\n"
+        f"ANTI-HALLUCINATION GUARDRAILS:\n"
+        f"Do NOT draw any Samsung product, device, screen, watch, appliance, or accessory. "
+        f"Do NOT draw hands holding, wearing, or interacting with invisible products. "
+        f"Do NOT generate text, logos, prices, specs, or marketing slogans. Do NOT use banned visual language: "
+        f"no 'revolutionary,' 'game-changing,' 'unleash,' 'insane,' 'mind-blowing,' 'magical,' 'cutting-edge,' "
+        f"'disruptive,' or 'must-have' — even as background signage or decor. No exclamation marks. No ALL-CAPS. No emoji.\n\n"
+        f"REPEAT: This image contains NO product. The central stage is EMPTY. This is a reusable background plate for Samsung marketing compositing."
     )
     contents = [*reference_parts, prompt] if reference_parts else prompt
 

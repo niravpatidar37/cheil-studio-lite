@@ -169,7 +169,7 @@ export default function BannerEditor({
 
       {/* Text layers and Product image */}
       {Object.entries(layers).map(([id, layer]) => {
-        if (id === "product" && layer.src) {
+        if (id.startsWith("product") && layer.src) {
           return (
             <img
               key={id}
@@ -198,7 +198,7 @@ export default function BannerEditor({
             style={{
               left: `${layer.xPct}%`,
               top: `${layer.yPct}%`,
-              width: `${94 - layer.xPct}%`,
+              width: `${layer.widthPct || Math.max(0, 94 - layer.xPct)}%`,
               fontSize: `${layer.sizePct}cqmin`,
               lineHeight: 1.2,
               color: layer.color,
