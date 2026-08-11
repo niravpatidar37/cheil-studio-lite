@@ -1,4 +1,4 @@
-# Cheil Studio Lite (prototype)
+# Cheil Studio Lite
 
 **AI models used:** Google Gemini API (`gemini-2.5-flash-lite`) for rapid idea generation, copy drafting, and text compilation, alongside deterministic local image compositing pipelines.
 
