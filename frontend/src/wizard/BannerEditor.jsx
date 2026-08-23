@@ -96,10 +96,15 @@ export default function BannerEditor({
       onPointerMove={onDrag}
       onPointerUp={endDrag}
       onPointerLeave={endDrag}
-      onClick={() => onSelect(null)}
-      className={`relative w-full overflow-hidden rounded-xl border border-neutral-700 select-none ${
-        isDragging ? "cursor-grabbing" : ""
-      }`}
+      onPointerDown={(e) => {
+        // Only deselect if they clicked the background canvas directly,
+        // not if they clicked one of the draggable child layers.
+        if (e.target === e.currentTarget) {
+          onSelect(null);
+        }
+      }}
+      className={`relative w-full overflow-hidden rounded-xl border border-neutral-700 select-none ${isDragging ? "cursor-grabbing" : ""
+        }`}
       style={{ ...previewStyle(bannerSize, 560), containerType: "size", background: backgroundCss }}
     >
       {backgroundImage && (
@@ -126,9 +131,9 @@ export default function BannerEditor({
               objectPosition: fit === "contain" ? "right center" : "center",
               ...(fit === "contain"
                 ? {
-                    maskImage: containMaskCss(bannerSize),
-                    WebkitMaskImage: containMaskCss(bannerSize),
-                  }
+                  maskImage: containMaskCss(bannerSize),
+                  WebkitMaskImage: containMaskCss(bannerSize),
+                }
                 : {}),
             }}
           />
@@ -156,9 +161,8 @@ export default function BannerEditor({
           alt="Samsung"
           draggable={false}
           onPointerDown={(e) => startDrag(e, "logo")}
-          className={`absolute cursor-grab active:cursor-grabbing ${
-            selectedId === "logo" ? "outline-2 outline-dashed outline-white/80" : ""
-          }`}
+          className={`absolute cursor-grab active:cursor-grabbing ${selectedId === "logo" ? "outline-2 outline-dashed outline-white/80" : ""
+            }`}
           style={{
             left: `${logo.xPct}%`,
             top: `${logo.yPct}%`,
@@ -169,23 +173,38 @@ export default function BannerEditor({
         />
       )}
 
-      {/* Text layers */}
-      {Object.entries(layers).map(([id, layer]) =>
-        layer.text?.trim() ? (
+      {/* Text layers and Product image */}
+      {Object.entries(layers).map(([id, layer]) => {
+        if (id.startsWith("product") && layer.src) {
+          return (
+            <img
+              key={id}
+              src={layer.src}
+              alt="Product"
+              draggable={false}
+              onPointerDown={(e) => startDrag(e, id)}
+              className={`absolute cursor-grab active:cursor-grabbing ${selectedId === id ? "outline-2 outline-dashed outline-white/80" : ""
+                }`}
+              style={{
+                left: `${layer.xPct}%`,
+                top: `${layer.yPct}%`,
+                width: `${layer.sizePct}cqmax`,
+                objectFit: "contain",
+              }}
+            />
+          );
+        }
+
+        return layer.text?.trim() ? (
           <div
             key={id}
             onPointerDown={(e) => startDrag(e, id)}
-            className={`absolute cursor-grab whitespace-pre-wrap active:cursor-grabbing ${
-              selectedId === id ? "outline-2 outline-dashed outline-white/80" : ""
-            }`}
+            className={`absolute cursor-grab whitespace-pre-wrap active:cursor-grabbing ${selectedId === id ? "outline-2 outline-dashed outline-white/80" : ""
+              }`}
             style={{
               left: `${layer.xPct}%`,
               top: `${layer.yPct}%`,
-              width: `${94 - layer.xPct}%`,
-              // cqmin, not cqh: sized against height, a 9:16 mobile canvas gives
-              // a 144px headline that wraps onto three lines and collides with
-              // the body copy. The smaller edge is the stable basis across every
-              // aspect ratio, and leaves the wide formats unchanged.
+              width: `${layer.widthPct || Math.max(0, 94 - layer.xPct)}%`,
               fontSize: `${layer.sizePct}cqmin`,
               lineHeight: 1.2,
               color: layer.color,
@@ -194,8 +213,8 @@ export default function BannerEditor({
           >
             {layer.text}
           </div>
-        ) : null
-      )}
+        ) : null;
+      })}
     </div>
   );
 }

@@ -106,11 +106,44 @@ export function previewStyle(bannerSize, maxHeightPx) {
   };
 }
 
-// Default layer placement, expressed as percentages of the canvas so it
-// survives any scale change between preview and export.
-export function defaultLayers(headline, body) {
+export function defaultLayers(headline, body, productImage = null, productImages = [], format = "Desktop") {
+  const images = productImages?.length ? productImages : (productImage ? [productImage] : []);
+  const addedProducts = {};
+
+  const isPortrait = format === "Mobile";
+
+  if (isPortrait) {
+    if (images.length === 1) {
+      addedProducts.product = { src: images[0], xPct: 25, yPct: 35, sizePct: 35 };
+    } else if (images.length === 2) {
+      addedProducts.product0 = { src: images[0], xPct: 8, yPct: 35, sizePct: 28 };
+      addedProducts.product1 = { src: images[1], xPct: 52, yPct: 42, sizePct: 24 };
+    } else if (images.length > 0) {
+      images.forEach((img, i) => {
+        addedProducts[`product${i}`] = { src: img, xPct: 8 + (i * 24), yPct: 40, sizePct: 22 };
+      });
+    }
+    return {
+      headline: { text: headline, xPct: 8, yPct: 72, sizePct: 9, widthPct: 84, color: "#FFFFFF", weight: 700 },
+      body: { text: body, xPct: 8, yPct: 84, sizePct: 4.5, widthPct: 84, color: "#E5E5E5", weight: 400 },
+      ...addedProducts
+    };
+  }
+
+  if (images.length === 1) {
+    addedProducts.product = { src: images[0], xPct: 38, yPct: 20, sizePct: 35 };
+  } else if (images.length === 2) {
+    addedProducts.product0 = { src: images[0], xPct: 33, yPct: 20, sizePct: 28 };
+    addedProducts.product1 = { src: images[1], xPct: 58, yPct: 26, sizePct: 22 };
+  } else if (images.length > 0) {
+    images.forEach((img, i) => {
+      addedProducts[`product${i}`] = { src: img, xPct: 32 + (i * 18), yPct: 25, sizePct: 18 };
+    });
+  }
+
   return {
-    headline: { text: headline, xPct: 6, yPct: 62, sizePct: 7.5, color: "#FFFFFF", weight: 700 },
-    body: { text: body, xPct: 6, yPct: 78, sizePct: 3.2, color: "#E5E5E5", weight: 400 },
+    headline: { text: headline, xPct: 6, yPct: 62, sizePct: 7.5, widthPct: 44, color: "#FFFFFF", weight: 700 },
+    body: { text: body, xPct: 6, yPct: 78, sizePct: 3.2, widthPct: 44, color: "#E5E5E5", weight: 400 },
+    ...addedProducts
   };
 }

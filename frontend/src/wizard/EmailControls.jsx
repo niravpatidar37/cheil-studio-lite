@@ -34,8 +34,9 @@ export default function EmailControls({
   onDesignChange,
   emailType,
 }) {
+  const d = design || {};
   const variant = templateFor(emailType);
-  const set = (patch) => onDesignChange?.({ ...design, ...patch });
+  const set = (patch) => onDesignChange?.({ ...d, ...patch });
 
   return (
     <div className="space-y-5 rounded-xl border border-neutral-800 bg-[#111111] p-4">
@@ -55,11 +56,10 @@ export default function EmailControls({
             <button
               key={p.label}
               onClick={() => onBackgroundChange?.(p.label)}
-              className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${
-                background === p.label
-                  ? "border-white bg-white/5"
-                  : "border-neutral-800 hover:border-neutral-600"
-              }`}
+              className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${background === p.label
+                ? "border-white bg-white/5"
+                : "border-neutral-800 hover:border-neutral-600"
+                }`}
             >
               <span
                 className="h-5 w-5 shrink-0 rounded-full border border-neutral-700"
@@ -74,7 +74,25 @@ export default function EmailControls({
       <hr className="border-neutral-800" />
 
       <div>
-        <p className="mb-2 text-sm font-semibold text-white">Design</p>
+        <p className="mb-2 text-sm font-semibold text-white">Design & Typography</p>
+
+        <Row label="Layout Theme">
+          <div className="flex bg-neutral-900 rounded-lg p-1 border border-neutral-800">
+            {["classic", "prestige", "bold"].map((th) => (
+              <button
+                key={th}
+                onClick={() => set({ theme: th })}
+                className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${(d.theme || "classic") === th
+                  ? "bg-neutral-700 text-white"
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
+                  }`}
+              >
+                {th}
+              </button>
+            ))}
+          </div>
+        </Row>
+
         <Row label="Button colour">
           <div className="flex flex-wrap gap-1.5">
             {ACCENTS.map((c) => (
@@ -82,17 +100,16 @@ export default function EmailControls({
                 key={c}
                 onClick={() => set({ accent: c })}
                 title={c}
-                className={`h-6 w-6 rounded-full border transition-transform ${
-                  (design.accent || "#111111") === c
-                    ? "scale-110 border-white"
-                    : "border-neutral-700 hover:border-neutral-500"
-                }`}
+                className={`h-6 w-6 rounded-full border transition-transform ${(d.accent || "#111111") === c
+                  ? "scale-110 border-white"
+                  : "border-neutral-700 hover:border-neutral-500"
+                  }`}
                 style={{ background: c }}
               />
             ))}
             <input
               type="color"
-              value={design.accent || "#111111"}
+              value={d.accent || "#111111"}
               onChange={(e) => set({ accent: e.target.value })}
               className="h-6 w-6 cursor-pointer rounded-full border border-neutral-700 bg-transparent p-0"
               title="Custom colour"
@@ -100,10 +117,10 @@ export default function EmailControls({
           </div>
         </Row>
 
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-300">
+        <label className="mt-5 flex cursor-pointer items-center gap-2 text-xs text-neutral-300">
           <input
             type="checkbox"
-            checked={design.showProduct !== false}
+            checked={d.showProduct !== false}
             onChange={(e) => set({ showProduct: e.target.checked })}
             className="h-3.5 w-3.5 accent-white"
           />

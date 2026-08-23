@@ -1,18 +1,67 @@
-async function postJSON(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.detail || `Request to ${path} failed: ${res.status}`);
+function getOwnerId() {
+  let id = localStorage.getItem("studio_owner_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("studio_owner_id", id);
   }
-  return res.json();
+  return id;
+}
+
+const COMMON_HEADERS = () => ({
+  "Content-Type": "application/json",
+  "X-Owner-Id": getOwnerId(),
+  "X-Demo-Mode": localStorage.getItem("studio_demo_mode") === "true" ? "true" : "false",
+});
+
+async function postJSON(path, body) {
+  // Backward compatible static timeout controller
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+  try {
+    console.log(`[HTTP POST] >> ${path}`, body);
+    const res = await fetch(path, {
+      method: "POST",
+      headers: COMMON_HEADERS(),
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.detail || `Request to ${path} failed: ${res.status}`);
+    }
+
+    const result = await res.json();
+    console.log(`[HTTP SUCCESS] << ${path}`, result);
+    return result;
+  } catch (err) {
+    console.error(`[HTTP CATCH] !! ${path}`, err);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function getProducts() {
   return fetch("/api/products").then((res) => res.json());
+}
+
+export async function apiExtractText(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const headers = COMMON_HEADERS();
+  delete headers["Content-Type"]; // browser handles multipart boundary
+
+  const res = await fetch("/api/extract-text", {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!res.ok) throw new Error("Could not parse document");
+  const data = await res.json();
+  return data.text;
 }
 
 // `products` is the full set — a campaign can cover several at once, weighted
@@ -34,6 +83,11 @@ export async function apiGenerateIdeas({
     formats,
     audiences,
   });
+  return data.ideas;
+}
+
+export async function apiTranslateIdeas(ideas) {
+  const data = await postJSON("/api/ideas/translate", { ideas });
   return data.ideas;
 }
 
@@ -124,6 +178,7 @@ export async function apiStartImageJob({
   productImage = "",
   productImages = [],
   campaignId = null,
+  brief = "",
 }) {
   const data = await postJSON("/api/jobs/images", {
     product,
@@ -136,19 +191,20 @@ export async function apiStartImageJob({
     // One reference per product, in the same order as `products`.
     product_images: productImages,
     campaign_id: campaignId,
+    brief,
   });
   return data.job_id;
 }
 
 export async function apiGetJob(jobId) {
-  const res = await fetch(`/api/jobs/${jobId}`);
+  const res = await fetch(`/api/jobs/${jobId}`, { headers: COMMON_HEADERS(), cache: "no-store" });
   if (!res.ok) throw new Error(`Job ${jobId} not found`);
   return res.json();
 }
 
 /** Poll an existing job to completion. Resolves to its result. */
 export async function awaitJob(jobId) {
-  for (;;) {
+  for (; ;) {
     const job = await apiGetJob(jobId);
     if (job.status === "done") return job.result;
     if (job.status === "error") throw new Error(job.error || "Image generation failed");
@@ -180,18 +236,18 @@ export async function apiSaveCampaign({ id, name, campaignType, status = "draft"
 }
 
 export async function apiListCampaigns() {
-  const res = await fetch("/api/campaigns");
+  const res = await fetch("/api/campaigns", { headers: COMMON_HEADERS() });
   if (!res.ok) throw new Error("Could not load campaigns");
   return (await res.json()).campaigns;
 }
 
 export async function apiGetCampaign(id) {
-  const res = await fetch(`/api/campaigns/${id}`);
+  const res = await fetch(`/api/campaigns/${id}`, { headers: COMMON_HEADERS() });
   if (!res.ok) throw new Error("Campaign not found");
   return res.json();
 }
 
 export async function apiDeleteCampaign(id) {
-  const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" });
+  const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE", headers: COMMON_HEADERS() });
   if (!res.ok) throw new Error("Could not delete campaign");
 }

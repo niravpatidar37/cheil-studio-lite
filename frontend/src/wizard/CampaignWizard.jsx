@@ -6,15 +6,18 @@ import SquarePreviewCard from "./SquarePreviewCard";
 import FormatSquareGrid from "./FormatSquareGrid";
 import QualityReport from "./QualityReport";
 import { Select, TextArea, PrimaryButton } from "../components/form";
+import { UploadIcon } from "../components/icons";
 import { useProducts } from "../context/ProductsContext";
-import { generateIdeas as fallbackIdeas } from "../lib/mockAgents";
+
 import {
   apiGenerateIdeas,
+  apiTranslateIdeas,
   apiGenerateAssets,
   apiReviseAssets,
   apiQualityCheck,
   apiSaveCampaign,
   apiGetCampaign,
+  apiExtractText,
   runImageJob,
   imageUrl,
 } from "../lib/api";
@@ -31,6 +34,7 @@ import {
   BACKDROP_BLUR_PCT,
   BACKDROP_DIM,
   BACKDROP_SCALE,
+  defaultLayers,
 } from "../lib/bannerSpecs";
 import { getCategoryIcon } from "../lib/categoryIcons";
 import { CheckIcon } from "../components/icons";
@@ -49,7 +53,7 @@ const STEP_LABELS = [
   "Ideas & Copy",
   "Asset Generation",
   "Edit",
-  "Export",
+  "Review & Export",
 ];
 
 // Where the exported headline and body copy is actually edited — the target
@@ -93,7 +97,7 @@ function TimingNote({ timing, label }) {
     <p className="mt-3 text-xs text-neutral-500">
       {label} generated in {secs(timing.ms)}
       {prefetched
-        ? ` · started in the background, so you waited ${secs(timing.waited)}`
+        ? ` · Optimized via background prefetching (Wait time: ${secs(timing.waited)})`
         : ""}
     </p>
   );
@@ -110,16 +114,15 @@ function ErrorBanner({ message }) {
 
 function FormatTabs({ formats, active, onChange }) {
   return (
-    <div className="mb-6 flex flex-wrap gap-2 border-b border-neutral-800 pb-4">
+    <div className="flex flex-wrap gap-2 border-b border-neutral-800 pb-4">
       {formats.map((f) => (
         <button
           key={f}
           onClick={() => onChange(f)}
-          className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
-            active === f
-              ? "border-white bg-white font-semibold text-black"
-              : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
-          }`}
+          className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${active === f
+            ? "border-white bg-white font-semibold text-black"
+            : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
+            }`}
         >
           {f}
         </button>
@@ -128,8 +131,34 @@ function FormatTabs({ formats, active, onChange }) {
   );
 }
 
+function LanguageToggle({ active, onChange, isTranslating }) {
+  return (
+    <div className="flex gap-1 rounded-lg bg-neutral-900 p-1 w-fit">
+      <button
+        type="button"
+        onClick={() => onChange("en")}
+        className={`px-4 py-1.5 text-sm rounded-md transition-colors ${active === "en" ? "bg-white text-black font-semibold shadow-sm" : "text-neutral-400 hover:text-neutral-200"
+          }`}
+      >
+        English
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("fr")}
+        className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center justify-center min-w-[90px] gap-2 ${active === "fr" ? "bg-white text-black font-semibold shadow-sm" : "text-neutral-400 hover:text-neutral-200"
+          }`}
+      >
+        Français
+        {isTranslating && (
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
+      </button>
+    </div>
+  );
+}
+
 /** Read-only composed preview shown on the Asset Generation step. */
-function BannerPreview({ bannerSize, image, backgroundCss, copy, generating }) {
+function BannerPreview({ bannerSize, image, backgroundCss, copy, generating, productImage, productImages = [] }) {
   const fit = backgroundFit(bannerSize);
 
   return (
@@ -159,9 +188,9 @@ function BannerPreview({ bannerSize, image, backgroundCss, copy, generating }) {
               objectPosition: fit === "contain" ? "right center" : "center",
               ...(fit === "contain"
                 ? {
-                    maskImage: containMaskCss(bannerSize),
-                    WebkitMaskImage: containMaskCss(bannerSize),
-                  }
+                  maskImage: containMaskCss(bannerSize),
+                  WebkitMaskImage: containMaskCss(bannerSize),
+                }
                 : {}),
             }}
           />
@@ -181,6 +210,25 @@ function BannerPreview({ bannerSize, image, backgroundCss, copy, generating }) {
           {copy?.body}
         </p>
       </div>
+      {Object.entries(defaultLayers("", "", productImage, productImages, bannerSize)).map(([id, layer]) => {
+        if (id.startsWith("product") && layer.src) {
+          return (
+            <img
+              key={id}
+              src={layer.src}
+              alt=""
+              className="absolute"
+              style={{
+                left: `${layer.xPct}%`,
+                top: `${layer.yPct}%`,
+                width: `${layer.sizePct}cqmax`,
+                objectFit: "contain"
+              }}
+            />
+          );
+        }
+        return null;
+      })}
       {generating && !image && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-neutral-300">
           Generating image…
@@ -196,6 +244,53 @@ function StepHeader({ title, subtitle }) {
       <h2 className="mb-1 text-xl font-bold">{title}</h2>
       <p className="mb-6 text-sm text-neutral-500">{subtitle}</p>
     </>
+  );
+}
+
+function FinalCopyPreview({ formats, assets, displayLang, setDisplayLang, activeFormatTab, setActiveFormatTab, images, inlineAssets, secondary, campaignType, busy, selectedProducts }) {
+  if (!formats.length || !assets[activeFormatTab]) return null;
+  const sample = assets[activeFormatTab];
+  return (
+    <div className="mt-6 mb-2 rounded-xl border border-neutral-800 bg-[#111111] p-5">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+        <FormatTabs formats={formats} active={activeFormatTab} onChange={setActiveFormatTab} />
+        <LanguageToggle active={displayLang} onChange={setDisplayLang} />
+      </div>
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">Headline</p>
+          <p className="mt-1 text-sm text-neutral-200 whitespace-pre-wrap">{sample[displayLang]?.headline || <span className="italic text-neutral-600">Empty</span>}</p>
+        </div>
+        <div>
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">Body Copy</p>
+          <p className="mt-1 text-sm text-neutral-300 whitespace-pre-wrap">{sample[displayLang]?.body || <span className="italic text-neutral-600">Empty</span>}</p>
+        </div>
+
+        {campaignType === "image" && (
+          <div className="mt-4 border-t border-neutral-800 pt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">Composited Layout</p>
+              {inlineAssets.productImage && (
+                <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white ring-1 ring-inset ring-white/20">
+                  ✓ Product preserved from catalog ({selectedProducts?.join(" + ") || "Unknown"})
+                </span>
+              )}
+            </div>
+            <div className="mx-auto max-w-xl">
+              <BannerPreview
+                bannerSize={activeFormatTab}
+                image={images[activeFormatTab]}
+                backgroundCss={getBackgroundCss(secondary)}
+                copy={sample[displayLang]}
+                productImage={inlineAssets.productImage}
+                productImages={inlineAssets.productImages}
+                generating={busy}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -251,9 +346,15 @@ export default function CampaignWizard({
   const [imageJobId, setImageJobId] = useState(null);
   const [savedAt, setSavedAt] = useState(null);
 
+  // UI toggles
+  const [displayLang, setDisplayLang] = useState("en");
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [warningOverride, setWarningOverride] = useState("");
+
   // How long generation actually took, and how long the user actually waited —
   // they differ whenever a prefetch got there first.
   const [timings, setTimings] = useState({});
+  const [parsingDoc, setParsingDoc] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!busy) {
@@ -290,6 +391,7 @@ export default function CampaignWizard({
   const hydratedRef = useRef(!resumeId);
 
   const snapshot = {
+    version: 1,
     step,
     brief,
     product,
@@ -313,27 +415,34 @@ export default function CampaignWizard({
     apiGetCampaign(resumeId)
       .then(({ state }) => {
         if (cancelled || !state) return;
-        setBrief(state.brief ?? "");
+
+        let loadedState = state;
+        if (!loadedState.version) {
+          // Schema v1 migration. Currently unversioned and v1 are structurally identical.
+          loadedState = { ...loadedState, version: 1 };
+        }
+
+        setBrief(loadedState.brief ?? "");
         // Campaigns saved before multi-select stored a single product name.
         setProduct(
-          Array.isArray(state.product)
-            ? state.product
-            : state.product
-              ? [state.product]
+          Array.isArray(loadedState.product)
+            ? loadedState.product
+            : loadedState.product
+              ? [loadedState.product]
               : []
         );
-        setSecondary(state.secondary ?? secondaryOptions[0]);
-        setFormats(state.formats ?? []);
-        setAudiences(state.audiences ?? []);
-        setIdeas(state.ideas ?? []);
-        setSelectedIdeaId(state.selectedIdeaId ?? null);
-        setAssets(state.assets ?? {});
-        setImages(state.images ?? {});
-        setImageJobId(state.imageJobId ?? null);
-        setActiveFormatTab(state.activeFormatTab ?? null);
-        setDesign(state.design ?? {});
-        setIncludeText(state.includeText ?? true);
-        setStep(state.step ?? 0);
+        setSecondary(loadedState.secondary ?? secondaryOptions[0]);
+        setFormats(loadedState.formats ?? []);
+        setAudiences(loadedState.audiences ?? []);
+        setIdeas(loadedState.ideas ?? []);
+        setSelectedIdeaId(loadedState.selectedIdeaId ?? null);
+        setAssets(loadedState.assets ?? {});
+        setImages(loadedState.images ?? {});
+        setImageJobId(loadedState.imageJobId ?? null);
+        setActiveFormatTab(loadedState.activeFormatTab ?? null);
+        setDesign(loadedState.design ?? {});
+        setIncludeText(loadedState.includeText ?? true);
+        setStep(loadedState.step ?? 0);
       })
       .catch(() => setError("Could not load that campaign — starting a new one."))
       .finally(() => {
@@ -397,7 +506,7 @@ export default function CampaignWizard({
     // an unhandled rejection.
     const job = apiGenerateIdeas({
       brief,
-      product: selectedProduct,
+      product: productLabel,
       products: selectedProducts,
       background: secondary,
       formats,
@@ -415,20 +524,31 @@ export default function CampaignWizard({
   // --- Step 6: Ideas & Copy ---
   const handleGenerateIdeas = async ({ force = false } = {}) => {
     setBusy(true);
+    setIsTranslating(false);
     setError(null);
     const clickedAt = Date.now();
     if (force) ideasJobRef.current.delete(ideasKey);
 
     const result = await runIdeasJob(ideasKey);
-    if (result.ok) {
+    if (result.ok && result.data && result.data.length > 0) {
       setIdeas(result.data);
       setSelectedIdeaId(result.data[0].id);
+
+      // Fire and forget French translation
+      setIsTranslating(true);
+      apiTranslateIdeas(result.data)
+        .then((translated) => {
+          setIdeas((prev) => prev.map((idea, i) => ({ ...idea, ...translated[i] })));
+        })
+        .catch((err) => {
+          console.error("Translation failed:", err);
+          setError("French translation failed. Please regenerate.");
+        })
+        .finally(() => setIsTranslating(false));
     } else {
-      setError(`Gemini unavailable — ${result.err.message}. Showing example ideas instead.`);
+      const msg = result.err ? result.err.message : "Generated an empty set of ideas.";
+      setError(`Gemini unavailable — ${msg}`);
       ideasJobRef.current.delete(ideasKey); // a failure must not be cached
-      const generated = fallbackIdeas(brief);
-      setIdeas(generated);
-      setSelectedIdeaId(generated[0].id);
     }
     setTimings((t) => ({ ...t, ideas: { ms: result.ms, waited: Date.now() - clickedAt } }));
     setBusy(false);
@@ -505,13 +625,13 @@ export default function CampaignWizard({
   const bgKey =
     campaignType === "image" && selectedIdea && formats.length
       ? JSON.stringify([
-          selectedProducts,
-          selectedIdea.id,
-          selectedIdea.en,
-          secondary,
-          formats,
-          effectiveAudiences,
-        ])
+        selectedProducts,
+        selectedIdea.id,
+        selectedIdea.en,
+        secondary,
+        formats,
+        effectiveAudiences,
+      ])
       : null;
 
   const runBackgroundJob = (key) => {
@@ -530,7 +650,7 @@ export default function CampaignWizard({
           .filter(([, ref]) => ref);
         return runImageJob(
           {
-            product: selectedProduct,
+            product: productLabel,
             products: grounded.map(([name]) => name),
             ideaEn: selectedIdea.en,
             style: secondary,
@@ -538,6 +658,7 @@ export default function CampaignWizard({
             audiences: effectiveAudiences,
             productImages: grounded.map(([, ref]) => ref),
             campaignId: campaignIdRef.current,
+            brief,
           },
           // Remember the job so a reload can re-attach instead of paying for
           // the same generation twice.
@@ -560,15 +681,9 @@ export default function CampaignWizard({
     return job;
   };
 
-  // Wait for the selection to settle before spending calls — without this,
-  // clicking through the three ideas to compare them would fire a full image
-  // batch for each one.
-  useEffect(() => {
-    if (!bgKey || step !== 5) return undefined;
-    const timer = setTimeout(() => runBackgroundJob(bgKey), 1500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bgKey, step]);
+  // The passive background image prefetcher has been disabled. Image generation 
+  // explicitly waits for the user to select 'Generate Assets' on step 7 to prevent 
+  // blocking the Uvicorn asyncio loop and starving the translation fetcher.
 
   // Banner copy is derived from the selected idea, so keep it in sync after
   // generation. Without this, fixing a headline on the Ideas step never
@@ -604,28 +719,29 @@ export default function CampaignWizard({
     if (campaignType === "image") {
       setAssets(assetsFromIdea(selectedIdea));
       if (force) bgJobsRef.current.delete(bgKey);
-      // Resolves immediately if the prefetch above already finished.
-      const result = await runBackgroundJob(bgKey);
-      setTimings((t) => ({
-        ...t,
-        images: { ms: result.ms, waited: Date.now() - clickedAt },
-      }));
-      if (result.ok) {
-        setImages(result.data.images);
-        if (result.data.failed?.length) {
-          setError(
-            `Image generation failed for ${result.data.failed.join(", ")} — those use the preset background.`
-          );
-        } else if (result.data.degraded?.length) {
-          setError(
-            `${result.data.degraded.join(", ")} was rate-limited, so it reuses the closest generated image. ` +
+
+      try {
+        const result = await runBackgroundJob(bgKey);
+        setTimings((t) => ({
+          ...t,
+          images: { ms: result.ms, waited: Date.now() - clickedAt },
+        }));
+        if (result.ok) {
+          setImages(result.data.images);
+          if (result.data.failed?.length) {
+            setError(
+              `Image generation failed for ${result.data.failed.join(", ")} — those use the preset background.`
+            );
+          } else if (result.data.degraded?.length) {
+            setError(
+              `${result.data.degraded.join(", ")} was rate-limited, so it reuses the closest generated image. ` +
               `Regenerate to try for a dedicated one.`
-          );
+            );
+          }
         }
-      } else {
-        // Don't cache a failure — the next attempt should really retry.
+      } catch (err) {
         bgJobsRef.current.delete(bgKey);
-        setError(`Image generation unavailable — ${result.err.message}. Using preset backgrounds.`);
+        setError(`Image generation unavailable — ${err.message}. Using preset backgrounds.`);
       }
       setBusy(false);
       return;
@@ -645,16 +761,7 @@ export default function CampaignWizard({
         )
       );
     } catch (err) {
-      setError(`Gemini unavailable — ${err.message}. Showing example copy instead.`);
-      setAssets(
-        fallbackAssets({
-          product: productLabel,
-          idea: selectedIdea,
-          formats,
-          audiences: effectiveAudiences,
-          secondary,
-        })
-      );
+      setError(`Gemini unavailable — ${err.message}.`);
     } finally {
       setBusy(false);
     }
@@ -685,18 +792,17 @@ export default function CampaignWizard({
   // The .txt files are a plain-text copy deck that sits beside the real
   // deliverable, for review and translation. Some packages do not want them.
   const isTextFile = (f) => f.name.toLowerCase().endsWith(".txt");
-  const textFileCount = exportFiles.filter(isTextFile).length;
   const packagedFiles = includeText ? exportFiles : exportFiles.filter((f) => !isTextFile(f));
-  // Banners are rasterised at download time, so they are not in `exportFiles`
-  // yet — but only image campaigns produce any.
-  const willHaveBanners = campaignType === "image";
-  // Video exports nothing but text, so dropping it would zip up an empty file.
+  const textFileCount = packagedFiles.length;
+  // If the zip will contain images, we know those files exist in memory even
+  // before the zip generator runs.
+  const willHaveBanners = campaignType === "image" && formats.length > 0;
   const zipWouldBeEmpty = packagedFiles.length === 0 && !willHaveBanners;
   // Built by parts so unticking the text files reads as "full-resolution PNGs"
   // rather than "0 files + full-resolution PNGs".
   const packageSummary = [
     packagedFiles.length &&
-      `${packagedFiles.length} file${packagedFiles.length === 1 ? "" : "s"}`,
+    `${packagedFiles.length} file${packagedFiles.length === 1 ? "" : "s"}`,
     willHaveBanners && "full-resolution PNGs",
   ]
     .filter(Boolean)
@@ -710,17 +816,17 @@ export default function CampaignWizard({
   const runChecksOn = async (target) => {
     // Report the actual on-canvas logo positions so the layout rule is
     // checked against what will really be exported.
-    const logoPlacements = Object.entries(bannerConfigsRef.current)
-      .filter(([key]) => formats.includes(key.split("__")[0]))
-      .map(([key, cfg]) => {
-        const [fmt, lang] = key.split("__");
+    const logoPlacements = formats.flatMap(fmt =>
+      ["en", "fr"].map(lang => {
+        const cfg = bannerConfigsRef.current[`${fmt}__${lang}`];
         return {
           format: fmt,
           lang,
-          y_pct: cfg?.logo?.yPct ?? 0,
+          y_pct: cfg?.logo?.yPct ?? 6,
           show: cfg?.logo?.show ?? true,
         };
-      });
+      })
+    );
     const result = await apiQualityCheck(
       productLabel,
       campaignType,
@@ -793,19 +899,58 @@ export default function CampaignWizard({
     try {
       const files = [...packagedFiles];
       const slug = productLabel.replace(/\s+/g, "_");
-      for (const [key, cfg] of Object.entries(bannerConfigsRef.current)) {
-        const [fmt, lang] = key.split("__");
-        if (!formats.includes(fmt)) continue;
-        try {
-          const blob = await renderBanner(cfg);
-          files.push({
-            name: `${slug}_${fmt.replace(/\s+/g, "_")}_${lang.toUpperCase()}.png`,
-            content: blob,
-          });
-        } catch {
-          /* skip a banner that fails to rasterise rather than losing the whole ZIP */
+      for (const fmt of formats) {
+        for (const lang of ["en", "fr"]) {
+          if (!assets[fmt] || !assets[fmt][lang]) continue;
+
+          let cfg = bannerConfigsRef.current[`${fmt}__${lang}`];
+          if (!cfg) {
+            // Reconstruct the layout for a banner the user never visited in the Edit tab
+            const copy = assets[fmt][lang];
+            cfg = {
+              bannerSize: fmt,
+              backgroundCss: getBackgroundCss(secondary),
+              backgroundImage: campaignType === "image" ? images[fmt] : null,
+              layers: defaultLayers(copy.headline || "", copy.body || "", inlineAssets.productImage, inlineAssets.productImages, fmt),
+              logo: { show: true, xPct: 4, yPct: 6, sizePct: 12, color: "#FFFFFF" },
+            };
+          }
+
+          try {
+            const blob = await renderBanner(cfg);
+            files.push({
+              name: `${slug}_${fmt.replace(/\s+/g, "_")}_${lang.toUpperCase()}.png`,
+              content: blob,
+            });
+          } catch {
+            /* skip a banner that fails to rasterise rather than losing the whole ZIP */
+          }
         }
       }
+
+      files.push({
+        name: "manifest.json",
+        content: JSON.stringify({
+          metadata: {
+            campaignName: productLabel,
+            campaignType: campaignType,
+            generationSource: localStorage.getItem("studio_demo_mode") === "true" ? "mock" : "ai",
+            products: selectedProducts.map(name => ({
+              id: name,
+              name: name,
+              image_url: products[name]?.image_url || "",
+            })),
+            generated_at: new Date().toISOString(),
+          },
+          configuration: {
+            formats,
+            audiences: effectiveAudiences,
+            brief,
+          },
+          assets
+        }, null, 2)
+      });
+
       await downloadZip(exportZipName(productLabel), files);
     } finally {
       setExporting(false);
@@ -817,7 +962,7 @@ export default function CampaignWizard({
     // for the few places that can only show a single thumbnail.
     product: productLabel,
     products: selectedProducts,
-    productImage: products[selectedProduct]?.image_url,
+    productImage: products[selectedProducts[0]]?.image_url,
     secondary,
     audiences: effectiveAudiences,
     ideaEn: selectedIdea?.en || "",
@@ -846,8 +991,43 @@ export default function CampaignWizard({
             title="Campaign Brief"
             subtitle="Describe what this campaign needs to achieve. Everything after this builds on it."
           />
-          <TextArea value={brief} onChange={setBrief} placeholder={ideaPlaceholder} rows={6} />
-          <StepButton onClick={goNext} disabled={!brief.trim()}>
+          <TextArea
+            value={brief}
+            onChange={setBrief}
+            placeholder="e.g. Back to school promo, 40% off..."
+            rows={10}
+          />
+
+          <div className="mt-4 flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm font-medium text-neutral-400 hover:text-white transition-colors cursor-pointer rounded-lg border border-neutral-700 bg-neutral-800/50 px-4 py-2 hover:bg-neutral-800">
+              <UploadIcon size={16} />
+              {parsingDoc ? "Parsing document..." : "Upload Document (PDF, DOCX, TXT)"}
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.docx,.txt,.md"
+                disabled={parsingDoc}
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  setParsingDoc(true);
+                  setError(null);
+                  try {
+                    const text = await apiExtractText(file);
+                    setBrief((prev) => prev.trim() ? prev + "\n\n" + text : text);
+                  } catch (err) {
+                    console.error("Document parse error", err);
+                    setError("Could not extract text from document.");
+                  } finally {
+                    setParsingDoc(false);
+                    e.target.value = null; // reset input
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          <StepButton onClick={goNext} disabled={!brief.trim() || parsingDoc}>
             Continue
           </StepButton>
         </div>
@@ -870,11 +1050,10 @@ export default function CampaignWizard({
                   type="button"
                   aria-pressed={picked}
                   onClick={() => toggleProduct(name)}
-                  className={`relative rounded-xl border p-4 text-left transition-colors ${
-                    picked
-                      ? "border-white bg-white/5"
-                      : "border-neutral-800 hover:border-neutral-600"
-                  }`}
+                  className={`relative rounded-xl border p-4 text-left transition-colors ${picked
+                    ? "border-white bg-white/5"
+                    : "border-neutral-800 hover:border-neutral-600"
+                    }`}
                 >
                   {picked && (
                     <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-white text-black">
@@ -911,14 +1090,13 @@ export default function CampaignWizard({
                   key={preset.label}
                   type="button"
                   onClick={() => setSecondary(preset.label)}
-                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
-                    secondary === preset.label
-                      ? "border-white bg-white/5"
-                      : "border-neutral-800 hover:border-neutral-600"
-                  }`}
+                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${secondary === preset.label
+                    ? "border-white bg-white/5 shadow-sm"
+                    : "border-neutral-800 hover:border-neutral-600"
+                    }`}
                 >
-                  <span
-                    className="h-12 w-12 shrink-0 rounded-lg border border-neutral-700"
+                  <div
+                    className="h-12 w-12 shrink-0 rounded-lg border border-white/10 shadow-inner"
                     style={{ background: preset.css }}
                   />
                   <span className={`text-sm ${secondary === preset.label ? "font-medium text-white" : "text-neutral-400"}`}>
@@ -1005,11 +1183,16 @@ export default function CampaignWizard({
             </StepButton>
           ) : (
             <>
+              <div className="mb-6">
+                <LanguageToggle active={displayLang} onChange={setDisplayLang} isTranslating={isTranslating} />
+              </div>
               <div className="space-y-4">
                 {ideas.map((idea) => (
                   <IdeaCard
                     key={idea.id}
                     idea={idea}
+                    displayLang={displayLang}
+                    isTranslating={isTranslating}
                     selected={idea.id === selectedIdeaId}
                     onSelect={() => setSelectedIdeaId(idea.id)}
                     onChange={(field, value) => updateIdeaField(idea.id, field, value)}
@@ -1026,8 +1209,8 @@ export default function CampaignWizard({
                 </button>
               </div>
               <TimingNote timing={timings.ideas} label="Ideas" />
-              <StepButton onClick={goNext} disabled={!selectedIdeaId}>
-                Confirm Direction
+              <StepButton onClick={goNext} disabled={!selectedIdeaId || isTranslating}>
+                {isTranslating ? "Translating to French..." : "Confirm Direction"}
               </StepButton>
             </>
           )}
@@ -1056,43 +1239,34 @@ export default function CampaignWizard({
             </StepButton>
           ) : (
             <>
-              <FormatTabs formats={formats} active={activeFormatTab} onChange={setActiveFormatTab} />
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+                <FormatTabs formats={formats} active={activeFormatTab} onChange={setActiveFormatTab} />
+                <LanguageToggle active={displayLang} onChange={setDisplayLang} />
+              </div>
 
               {campaignType === "image" ? (
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  {["en", "fr"].map((lang) => (
-                    <div key={lang}>
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                        {lang === "en" ? "English" : "Français"}
-                      </p>
-                      <BannerPreview
-                        bannerSize={activeFormatTab}
-                        image={images[activeFormatTab]}
-                        backgroundCss={getBackgroundCss(secondary)}
-                        copy={assets[activeFormatTab]?.[lang]}
-                        generating={busy}
-                      />
-                    </div>
-                  ))}
+                <div className="mx-auto max-w-4xl">
+                  <BannerPreview
+                    bannerSize={activeFormatTab}
+                    image={images[activeFormatTab]}
+                    backgroundCss={getBackgroundCss(secondary)}
+                    copy={assets[activeFormatTab]?.[displayLang]}
+                    productImage={inlineAssets.productImage}
+                    productImages={inlineAssets.productImages}
+                    generating={busy}
+                  />
                 </div>
               ) : (
                 activeFormatTab &&
                 assets[activeFormatTab] && (
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                    {["en", "fr"].map((lang) => (
-                      <div key={lang}>
-                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                          {lang === "en" ? "English" : "Français"}
-                        </p>
-                        {renderAssetTab(
-                          activeFormatTab,
-                          lang,
-                          assets[activeFormatTab][lang],
-                          (field, value) => updateAssetField(activeFormatTab, lang, field, value),
-                          assetCtx
-                        )}
-                      </div>
-                    ))}
+                  <div className="mx-auto max-w-4xl">
+                    {renderAssetTab(
+                      activeFormatTab,
+                      displayLang,
+                      assets[activeFormatTab][displayLang],
+                      (field, value) => updateAssetField(activeFormatTab, displayLang, field, value),
+                      assetCtx
+                    )}
                   </div>
                 )
               )}
@@ -1111,7 +1285,7 @@ export default function CampaignWizard({
                 onClick={goNext}
                 disabled={busy}
                 busy={busy}
-                busyLabel="Generating images…"
+                busyLabel={campaignType === "image" ? "Generating images…" : "Compiling assets…"}
                 elapsed={elapsed}
               >
                 Continue to Edit
@@ -1128,21 +1302,19 @@ export default function CampaignWizard({
             title="Edit"
             subtitle="Drag text and the logo to reposition, and adjust size, weight and colour."
           />
-          <FormatTabs formats={formats} active={activeFormatTab} onChange={setActiveFormatTab} />
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+            <FormatTabs formats={formats} active={activeFormatTab} onChange={setActiveFormatTab} />
+            <LanguageToggle active={displayLang} onChange={setDisplayLang} />
+          </div>
 
           {activeFormatTab && assets[activeFormatTab] && renderEditor ? (
-            <div className="space-y-8">
-              {["en", "fr"].map((lang) => (
-                <div key={lang}>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    {lang === "en" ? "English" : "Français"}
-                  </p>
-                  {renderEditor(activeFormatTab, lang, assets[activeFormatTab][lang], {
-                    ...assetCtx,
-                    image: images[activeFormatTab],
-                  })}
-                </div>
-              ))}
+            <div className="mx-auto max-w-4xl">
+              {renderEditor(activeFormatTab, displayLang, assets[activeFormatTab][displayLang], {
+                ...assetCtx,
+                image: images[activeFormatTab],
+                productImage: inlineAssets.productImage,
+                productImages: inlineAssets.productImages,
+              })}
             </div>
           ) : (
             <p className="text-sm text-neutral-500">
@@ -1154,11 +1326,11 @@ export default function CampaignWizard({
         </div>
       )}
 
-      {/* 9 — Export (gated on the automatic guardrail review) */}
+      {/* 9 — Review & Export (gated on the automatic guardrail review) */}
       {step === 8 && (
         <div>
           <StepHeader
-            title="Export"
+            title="Review & Export"
             subtitle="Every asset is reviewed against the Samsung guardrails before the package unlocks."
           />
 
@@ -1178,9 +1350,17 @@ export default function CampaignWizard({
               )}
 
               {verdict.startsWith("warn") && (
-                <div className="mt-4 rounded-lg border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
-                  Warnings are advisory — you can export as is, fix them below, or revise the
-                  copy yourself.
+                <div className="mt-4 rounded-lg border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-300 flex flex-col gap-2">
+                  <p>
+                    Warnings require manual review. Please provide a reason to override these warnings before exporting.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="Reason for overriding warnings..."
+                    value={warningOverride}
+                    onChange={(e) => setWarningOverride(e.target.value)}
+                    className="w-full rounded-md border-amber-800/60 bg-black/40 text-sm text-white px-3 py-2 outline-none focus:border-amber-600 transition-colors"
+                  />
                 </div>
               )}
 
@@ -1226,6 +1406,21 @@ export default function CampaignWizard({
                 </button>
               </div>
 
+              <FinalCopyPreview
+                formats={formats}
+                assets={assets}
+                displayLang={displayLang}
+                setDisplayLang={setDisplayLang}
+                activeFormatTab={activeFormatTab}
+                setActiveFormatTab={setActiveFormatTab}
+                images={images}
+                inlineAssets={inlineAssets}
+                secondary={secondary}
+                campaignType={campaignType}
+                busy={busy}
+                selectedProducts={selectedProducts}
+              />
+
               <div className="mt-6 rounded-xl border border-neutral-800 bg-[#111111] p-5">
                 <p className="mb-2 text-sm font-semibold text-white">Export package</p>
                 <p className="text-sm text-neutral-400">
@@ -1263,7 +1458,7 @@ export default function CampaignWizard({
               <div className="mt-6">
                 <PrimaryButton
                   onClick={handleDownloadZip}
-                  disabled={exporting || verdict === "fail" || zipWouldBeEmpty}
+                  disabled={exporting || verdict === "fail" || zipWouldBeEmpty || (verdict.startsWith("warn") && warningOverride.trim().length === 0)}
                 >
                   {exporting ? (willHaveBanners ? "Rendering banners…" : "Packaging…") : "Download ZIP"}
                 </PrimaryButton>

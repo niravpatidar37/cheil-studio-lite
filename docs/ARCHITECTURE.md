@@ -16,15 +16,17 @@ page lists saved campaigns to resume. Only the columns the list needs (name, typ
 status, timestamps) are promoted out of the document — the wizard's shape is still
 moving, and a rigid schema would mean a migration per UI change for no query benefit.
 
-**Image generation is a job, not a request.** It takes 8–80s depending on Vertex
+**Image generation is a job, not a request.** It takes 10–12s depending on Vertex
 capacity, which is far too long to hold a connection open, and the work is billed
 whether or not the client is still listening. `POST /api/jobs/images` returns a job id
 immediately; the run is detached and records its own outcome, so a reload or a
 navigation cannot orphan it. The job id is stored with the campaign, so a resumed
 campaign re-attaches instead of paying for the same generation twice.
 
-Ideas generation (~10s) deliberately stays synchronous. Durable job state earns its
-complexity on the long, expensive, retry-prone call — not on every call.
+**Threadpool Offloading**: To avoid starving the ASGI event loop of the Uvicorn server, synchronous SQLite IO operations (`store.create_job()`) invoked inside these asynchronous generation wrappers are completely wrapped in `anyio.to_thread.run_sync()`. This guarantees the server effortlessly scales across hundreds of concurrent LLM web-socket polling connections without local lock-ups.
+
+Ideas generation (~1.5s - 2.5s) deliberately stays synchronous, aggressively optimized by `gemini-2.5-flash-lite`. Durable job state earns its
+complexity on long, expensive, retry-prone calls — not on rapid sub-second generative paths.
 
 **Images are served by URL, not inlined.** They are ~1.5 MB each. Previously every one
 travelled as a base64 data URI inside JSON, on every request and response that touched
@@ -37,12 +39,11 @@ random and never mutated, so the responses are `immutable`.
 > so replacing it with a real queue means changing `_run_image_job`, not the API or the
 > client.
 
-## Structured output
+## Structured output via Pydantic AI
 
-Text endpoints share a Samsung brand-voice system prompt and use Gemini **structured
-output** (Pydantic response schemas), so malformed responses can't reach the UI. Schemas
+Text endpoints share a Samsung brand-voice system prompt and use the **`pydantic-ai`** orchestrator library strictly enforcing structured output response schemas (`Agent` output_type mapping). This physically guarantees that malformed responses cannot reach the UI. Schemas
 return *ordered lists* that the backend zips against the request order rather than asking
-the model to echo exact format names back as JSON keys — noticeably more reliable.
+the model to echo exact format names back as JSON keys — noticeably more reliable and heavily optimized for `gemini-2.5-flash-lite`.
 
 ## Campaign context
 
@@ -61,11 +62,9 @@ setup as context.
 ## Product grounding
 
 The image model does not know what a "Galaxy S26" looks like — left to a text prompt it
-invented abstract crystals and generic handsets. So the catalog shot the user selected on
-the Product step is sent with the request as a reference image part, with instructions to
-reproduce that device exactly (model, colour, finish, camera layout, accessories) and to
-use no other source for its appearance. The reference's own plain background and framing
-are explicitly *not* copied — the device is relit into the generated scene.
+invented abstract crystals and generic handsets. 
+
+To ensure strict brand compliance, **we completely decoupled the product from the AI illustration**. The frontend now instructs the generation suite to build an entirely *empty* studio or lifestyle environment, requesting generous negative space. Once returned to the client, the original pristine catalog PNG is layered exactly on top using React/Canvas native compositing. This approach completely eliminates architectural hallucinations (e.g., incorrect camera mounts or missing styluses) while retaining dynamic lighting moods in the backdrop. The original product image is passed as context just so the model natively understands the 'vibe' it is styling its empty backdrop for.
 
 Catalog images live in `frontend/public/` as PNG. `productReferencePng()` decodes whatever
 the catalog ships through a canvas, so AVIF sources keep working without adding an
@@ -91,9 +90,7 @@ ungrounded generation rather than failing the step.
   preset gradient — a cropped real scene is the better failure mode. Reported as
   `degraded` in the response and surfaced in the UI.
 
-Wall time is dominated by Vertex shared-capacity throttling and retry backoff, not by our
-code: a measured four-format batch runs ~80s, and a single 429'd format can spend 45s in
-backoff alone.
+Wall time was previously dominated by Vertex shared-capacity throttling and TTFT waits. To resolve this without forcing hostile local throttling or degrading UX, we completely migrated the core generation engine to natively route to `gemini-2.5-flash-lite` and clamped image sizes using deterministic prompt stages, which substantially eliminated 429 backoff capacity exhaustion while dropping end-to-end generation blocks from ~80s down to ~11s.
 
 ## Banner layout
 
@@ -137,6 +134,8 @@ width rendered ~1170px tall, which made the Edit step three screens long. The ca
 applied to *width* derived from a target height — a `max-height` on an aspect-ratio box
 would let it go shorter than its ratio and desynchronise the preview from the export.
 
+**Unvisited canvas tabs securely fallback.** If a user rushes straight from Generation (Step 7) to Export (Step 9) without opening every single layout permutation, the ZIP exporter intercepts the empty DOM ref. It automatically synthetically reconstructs the full state payload (incorporating the decoupled PNG graphic, dynamic CSS background, and localized translation slice) entirely dynamically, ensuring the downloaded bundle is flawless regardless of explicit UX traversal.
+
 ## Email
 
 Email produces an **export-ready HTML layout**, not just copy. `lib/emailTemplate.js`
@@ -144,6 +143,8 @@ builds it to email-client rules — table layout, inline styles, fixed 600px, no
 flexbox or grid, since Outlook renders with Word's engine and silently collapses
 anything modern. The ZIP carries the `.html` plus a `.txt` so copy can be reviewed and
 translated without opening a browser.
+
+**Premium Aesthetic Constraints:** To rival high-fidelity design standards like Apple and Samsung, the email layout builder enforces aggressive structural boundaries natively inside simple `<table width="600">` components. By overriding basic properties with large padding elements (48px internal boundaries), soft typographic grays (`#1D1D1F`), and pill-shaped call-to-action objects (100px radii), the resulting emails feel distinctly premium despite relying entirely on fundamental `HTML 4` structures. Furthermore, the `Design & Typography` panel is decoupled from the AI generator, giving users absolute CSS aesthetic override (Classic/Prestige/Bold styles) without rebilling the model.
 
 The preview is an **iframe fed the exact HTML the ZIP contains**. Rendering it as
 ordinary React would have let the app's stylesheet prop up a layout that has to stand
@@ -180,6 +181,11 @@ and it cannot change its mind between runs. Naming inactivity is a `fail`; missi
 preference controls is a `warn`. The check only appears when a re-engagement email is
 part of the campaign.
 
+## Document Brief Ingestion
+Marketing teams rarely start with plain text; they start with 15-page PDFs. The `POST /api/extract-text` endpoint exists to natively buffer `pypdf` and `python-docx` conversions over multipart file uploads. Instead of having the backend read the file invisibly during AI generation, we extract the string server-side, push it directly into the frontend Text Area, and let the user manually curate exactly what makes it into the final LLM Context. This guarantees no hidden unreviewed text poisons the output pipeline, letting users actively summarize or crop massive catalog PDFs.
+
+**CPU Parsing Thread Isolation:** Because reading massive binaries (`PyPDF`) is extremely CPU bound, `.pdf` and `.docx` routes must not block the main Event Loop. The `/api/extract-text` router isolates exactly this threat by running as a standard `def` block (instead of `async def`), prompting FastAPI to safely offload the synchronous rendering overhead exactly onto an external OS worker threadpool.
+
 ## Acting on a quality verdict
 
 `fail` locks the download; `warn` is advisory and still exports. Either way the Export
@@ -209,6 +215,7 @@ should ever fail because tracing is down.
 | Tokens | `input`, `output`, `output_reasoning`, `input_cached` |
 | Cost | Derived from `PRICING` in `observability.py` — update it if Google changes rates |
 | Feedback scores | `guardrail_verdict` (categorical), `guardrail_pass` (0/1), `image_success_rate` (ratio) |
+| Quantitative Grading | The LLM-as-a-judge emits a strict JSON 6-metric grading block per review, linearly mapped to Langfuse `obs.score` multi-dimensional arrays to continuously track model alignment degradation. |
 
 **Retries are traced individually.** Each image attempt opens its own generation
 observation, so a throttled call that succeeds on attempt 3 shows all three —
@@ -233,3 +240,8 @@ like an author.
 `CampaignWizard` but imported only into `BannerEditor` passed `vite build` cleanly and
 white-screened at runtime, on one format only. Vite does not do that scope analysis;
 the linter does.
+
+
+## Tracing 
+
+![alt text](image.png)

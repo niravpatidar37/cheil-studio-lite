@@ -20,11 +20,12 @@ export default function BannerStudio({
   audiences,
   initialStyle,
   productImage,
+  productImages,
   initialImage,
   onConfigChange,
   onFieldChange,
 }) {
-  const [layers, setLayers] = useState(() => defaultLayers(headline, body));
+  const [layers, setLayers] = useState(() => defaultLayers(headline, body, productImage, productImages, bannerSize));
   const [logo, setLogo] = useState({ show: true, xPct: 4, yPct: 6, sizePct: 12, color: "#FFFFFF" });
   const [selectedId, setSelectedId] = useState(null);
 
@@ -38,6 +39,7 @@ export default function BannerStudio({
   // Keep layer text in sync when the upstream copy is edited.
   useEffect(() => {
     setLayers((prev) => ({
+      ...prev,
       headline: { ...prev.headline, text: headline },
       body: { ...prev.body, text: body },
     }));
@@ -79,6 +81,7 @@ export default function BannerStudio({
         productImage: reference,
       });
       setAiImage(imageUrl(result.images[bannerSize]));
+      setBackgroundMode("ai");
     } catch (err) {
       setError(err.message);
       setBackgroundMode("preset");

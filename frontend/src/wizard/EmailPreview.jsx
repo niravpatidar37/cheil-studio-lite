@@ -4,7 +4,8 @@ import { buildEmailHtml } from "../lib/emailTemplate";
 // Emails are laid out at a fixed 600px. Letting the iframe be narrower does
 // not reflow them — a table that wide simply overflows and gets clipped — so
 // the frame stays 600px and is scaled down to fit the column instead.
-const EMAIL_WIDTH = 600;
+// fixed 600px body. The 40px overhead perfectly encompasses the lateral padding gutters.
+const EMAIL_WIDTH = 640;
 
 /**
  * Read-only render of the exact HTML the ZIP contains.
@@ -14,7 +15,7 @@ const EMAIL_WIDTH = 600;
  * it up.
  */
 export default function EmailPreview({
-  data,
+  data = {},
   product,
   inline,
   lang,
@@ -55,18 +56,18 @@ export default function EmailPreview({
     <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
       <div className="border-b border-neutral-800 px-3 py-2">
         <p className="truncate text-xs text-neutral-400">
-          <span className="text-neutral-200">Samsung</span> · {data.subject || "(no subject)"}
+          <span className="text-neutral-200">Samsung</span> · {data?.subject || "(no subject)"}
         </p>
-        <p className="truncate text-[11px] text-neutral-600">{data.preheader}</p>
+        <p className="truncate text-[11px] text-neutral-600">{data?.preheader}</p>
       </div>
       <div ref={wrapRef} className="overflow-hidden bg-white" style={{ height }}>
         <iframe
           title={`Email preview ${lang}`}
           srcDoc={html}
-          scrolling="no"
+          scrolling="yes"
           className="border-0 bg-white"
           style={{
-            width: EMAIL_WIDTH,
+            width: scale < 1 ? EMAIL_WIDTH : "100%",
             // Taller by the inverse of the scale so the visible area still
             // fills the box once it shrinks.
             height: height / scale,
